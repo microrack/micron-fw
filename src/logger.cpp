@@ -34,7 +34,7 @@ void logger_init() {
     }
 }
 
-void log_printf(const char* fmt, ...) {
+void logger_printf(const char* fmt, ...) {
     if (fmt == nullptr) {
         return;
     }

@@ -5,6 +5,7 @@
 #include "led.h"
 #include "logger.h"
 #include "net.h"
+#include "ota.h"
 #include "usb_host.h"
 
 static AppConfig g_app_config = {
@@ -28,7 +29,11 @@ void setup() {
     pinMode(TOUCH_PIN, INPUT);
     init_led();
     logger_init();
+    ota_init();
     g_app_config = config_init();
+
+    logger_printf("app config: usb: %d, wifi: %d, ssid: %s\n",
+        g_app_config.usb, g_app_config.wifi, g_app_config.ssid);
 
     if (g_app_config.usb) {
         check_boot_mode_pin();
@@ -42,7 +47,22 @@ void setup() {
 
 // loop must contain only unblocking operations except short I/O operations
 void loop() {
+    static int prev_touch_state = 0;
+    const int touch_state = digitalRead(TOUCH_PIN);
+    const bool pressed_edge = (prev_touch_state == 0) && (touch_state == 1);
+    prev_touch_state = touch_state;
+
+    if (pressed_edge && g_app_config.wifi) {
+        const NetState state = net_get_state();
+        if (state == NetState::Ap) {
+            net_start_client();
+        } else {
+            net_start_ap();
+        }
+    }
+
     handle_net();
+    ota_handle(net_get_state(), g_app_config.wifi);
 
     switch (net_get_state()) {
         case NetState::Connecting:
@@ -55,20 +75,6 @@ void loop() {
             set_led_mode(LedMode::Connected);
             break;
     }
-
-    static uint32_t last_send_ms = 0;
-    const uint32_t now_ms = millis();
-    if (g_app_config.wifi && now_ms - last_send_ms >= 1000) {
-        last_send_ms = now_ms;
-        log_printf("hello");
-    }
-
-    if (g_app_config.wifi) {
-        char log_message[160];
-        while (logger_get_next(log_message, sizeof(log_message))) {
-            send_message(log_message);
-        }
-    }
-
+    
     handle_led();
 }

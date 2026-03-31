@@ -6,7 +6,7 @@
 
 static constexpr uint8_t LED_BRIGHTNESS = 96;
 static constexpr uint16_t STEP_MS = 50;
-static constexpr uint16_t CONNECTING_BLINK_MS = 500;
+static constexpr uint16_t CONNECTING_BLINK_MS = 150;
 
 static CRGB leds[BOARD_LED_COUNT];
 static bool manual_led_state[BOARD_LED_COUNT] = {false};

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdint.h>
+
 #include "config.h"
 
 enum class NetState : uint8_t {
@@ -13,4 +15,3 @@ void net_start_ap();
 void net_start_client();
 NetState net_get_state();
 void handle_net();
-void send_message(const char* message);
