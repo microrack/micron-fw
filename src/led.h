@@ -7,6 +7,9 @@ enum class LedMode : uint8_t {
     Boot = 1,
     Manual = 2,
     All = 3,
+    Connecting = 4,
+    Ap = 5,
+    Connected = 6,
 };
 
 void init_led();

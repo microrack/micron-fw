@@ -1,4 +1,5 @@
 #include "usb_host.h"
+#include "logger.h"
 
 extern "C" {
 #include "esp_err.h"
@@ -7,9 +8,6 @@ extern "C" {
 #include "usb/usb_types_stack.h"
 }
 
-#include <stdarg.h>
-#include <stdio.h>
-
 struct HostState {
     usb_host_client_handle_t client = nullptr;
     volatile bool has_new_device = false;
@@ -17,22 +15,7 @@ struct HostState {
 };
 
 static HostState g_host;
-static UsbHostConfig g_usb_host_config = {};
 static SemaphoreHandle_t g_host_installed_sem = nullptr;
-
-static void emit_stack_message(const char* fmt, ...) {
-    if (g_usb_host_config.stack_message_cb == nullptr) {
-        return;
-    }
-
-    char buffer[160];
-    va_list args;
-    va_start(args, fmt);
-    vsnprintf(buffer, sizeof(buffer), fmt, args);
-    va_end(args);
-
-    g_usb_host_config.stack_message_cb(buffer);
-}
 
 static void usb_daemon_task(void* arg) {
     (void)arg;
@@ -44,12 +27,12 @@ static void usb_daemon_task(void* arg) {
 
     esp_err_t err = usb_host_install(&host_config);
     if (err != ESP_OK) {
-        emit_stack_message("usb_host_install failed: %s", esp_err_to_name(err));
+        log_printf("usb_host_install failed: %s", esp_err_to_name(err));
         vTaskDelete(nullptr);
         return;
     }
 
-    emit_stack_message("USB Host installed");
+    log_printf("USB Host installed");
     if (g_host_installed_sem != nullptr) {
         xSemaphoreGive(g_host_installed_sem);
     }
@@ -58,7 +41,7 @@ static void usb_daemon_task(void* arg) {
         uint32_t event_flags = 0;
         err = usb_host_lib_handle_events(portMAX_DELAY, &event_flags);
         if (err != ESP_OK) {
-            emit_stack_message("usb_host_lib_handle_events failed: %s", esp_err_to_name(err));
+            log_printf("usb_host_lib_handle_events failed: %s", esp_err_to_name(err));
         }
     }
 }
@@ -73,7 +56,7 @@ static void client_event_cb(const usb_host_client_event_msg_t* event_msg, void* 
             break;
 
         case USB_HOST_CLIENT_EVENT_DEV_GONE:
-            emit_stack_message("USB device disconnected");
+            log_printf("USB device disconnected");
             break;
 
         default:
@@ -98,17 +81,17 @@ static void usb_client_task(void* arg) {
 
     esp_err_t err = usb_host_client_register(&client_config, &st->client);
     if (err != ESP_OK) {
-        emit_stack_message("usb_host_client_register failed: %s", esp_err_to_name(err));
+        log_printf("usb_host_client_register failed: %s", esp_err_to_name(err));
         vTaskDelete(nullptr);
         return;
     }
 
-    emit_stack_message("USB Host client registered");
+    log_printf("USB Host client registered");
 
     while (true) {
         err = usb_host_client_handle_events(st->client, portMAX_DELAY);
         if (err != ESP_OK) {
-            emit_stack_message("usb_host_client_handle_events failed: %s", esp_err_to_name(err));
+            log_printf("usb_host_client_handle_events failed: %s", esp_err_to_name(err));
             continue;
         }
 
@@ -118,19 +101,19 @@ static void usb_client_task(void* arg) {
             usb_device_handle_t dev_hdl = nullptr;
             err = usb_host_device_open(st->client, st->new_dev_addr, &dev_hdl);
             if (err != ESP_OK) {
-                emit_stack_message("usb_host_device_open failed: %s", esp_err_to_name(err));
+                log_printf("usb_host_device_open failed: %s", esp_err_to_name(err));
                 continue;
             }
 
             const usb_device_desc_t* desc = nullptr;
             err = usb_host_get_device_descriptor(dev_hdl, &desc);
             if (err != ESP_OK) {
-                emit_stack_message("usb_host_get_device_descriptor failed: %s", esp_err_to_name(err));
+                log_printf("usb_host_get_device_descriptor failed: %s", esp_err_to_name(err));
                 usb_host_device_close(st->client, dev_hdl);
                 continue;
             }
 
-            emit_stack_message(
+            log_printf(
                 "USB device connected: addr=%u VID=%04X PID=%04X class=%02X subclass=%02X proto=%02X",
                 st->new_dev_addr,
                 desc->idVendor,
@@ -142,18 +125,18 @@ static void usb_client_task(void* arg) {
 
             err = usb_host_device_close(st->client, dev_hdl);
             if (err != ESP_OK) {
-                emit_stack_message("usb_host_device_close failed: %s", esp_err_to_name(err));
+                log_printf("usb_host_device_close failed: %s", esp_err_to_name(err));
             }
         }
     }
 }
 
 void usb_host_init(const UsbHostConfig& config) {
-    g_usb_host_config = config;
+    (void)config;
     if (g_host_installed_sem == nullptr) {
         g_host_installed_sem = xSemaphoreCreateBinary();
     }
-    emit_stack_message("Starting USB Host example...");
+    log_printf("Starting USB Host example...");
 
     xTaskCreatePinnedToCore(usb_daemon_task, "usb_daemon", 4096, nullptr, 20, nullptr, 0);
     xTaskCreatePinnedToCore(usb_client_task, "usb_client", 4096, &g_host, 20, nullptr, 0);

@@ -3,6 +3,7 @@
 #include "board.h"
 #include "config.h"
 #include "led.h"
+#include "logger.h"
 #include "net.h"
 #include "usb_host.h"
 
@@ -10,10 +11,6 @@ static AppConfig g_app_config = {
     .usb = false,
     .wifi = false,
 };
-
-static void usb_stack_message_cb(const char* message) {
-    send_message(message);
-}
 
 static void check_boot_mode_pin() {
     set_led_mode(LedMode::All);
@@ -30,42 +27,48 @@ static void check_boot_mode_pin() {
 void setup() {
     pinMode(TOUCH_PIN, INPUT);
     init_led();
+    logger_init();
     g_app_config = config_init();
 
     if (g_app_config.usb) {
         check_boot_mode_pin();
-        
-        const UsbHostConfig usb_host_config = {
-            .stack_message_cb = usb_stack_message_cb,
-        };
+        const UsbHostConfig usb_host_config = {};
         usb_host_init(usb_host_config);
     }
     
-    set_led_mode(LedMode::Manual);
-    if (g_app_config.wifi) {
-        net_init();
-    }
+    net_init(g_app_config);
     
 }
 
 // loop must contain only unblocking operations except short I/O operations
 void loop() {
-    if (g_app_config.wifi) {
-        handle_net();
-    }
+    handle_net();
 
-    const int touch_state = digitalRead(TOUCH_PIN);
-    if (touch_state == 0) {
-        set_led(0, false);
-    } else {
-        set_led(0, true);
+    switch (net_get_state()) {
+        case NetState::Connecting:
+            set_led_mode(LedMode::Connecting);
+            break;
+        case NetState::Ap:
+            set_led_mode(LedMode::Ap);
+            break;
+        case NetState::Client:
+            set_led_mode(LedMode::Connected);
+            break;
     }
-    handle_led();
 
     static uint32_t last_send_ms = 0;
     const uint32_t now_ms = millis();
     if (g_app_config.wifi && now_ms - last_send_ms >= 1000) {
         last_send_ms = now_ms;
-        send_message("hello");
+        log_printf("hello");
     }
+
+    if (g_app_config.wifi) {
+        char log_message[160];
+        while (logger_get_next(log_message, sizeof(log_message))) {
+            send_message(log_message);
+        }
+    }
+
+    handle_led();
 }
