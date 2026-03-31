@@ -24,6 +24,7 @@ struct HostState {
     uint8_t midi_in_ep_addr = 0;
     uint8_t active_dev_addr = 0;
     bool midi_interface_claimed = false;
+    volatile bool stream_broken = false;
 };
 
 static HostState g_host;
@@ -175,15 +176,19 @@ static void midi_in_transfer_cb(usb_transfer_t* transfer) {
         }
     } else if (transfer->status == USB_TRANSFER_STATUS_NO_DEVICE) {
         logger_printf("USB MIDI IN transfer: device gone");
+        st->stream_broken = true;
         return;
     } else {
         logger_printf("USB MIDI IN transfer status=%d", static_cast<int>(transfer->status));
+        st->stream_broken = true;
+        return;
     }
 
     transfer->num_bytes = static_cast<int>(transfer->data_buffer_size);
     const esp_err_t err = usb_host_transfer_submit(transfer);
     if (err != ESP_OK) {
         logger_printf("usb_host_transfer_submit(IN resubmit) failed: %s", esp_err_to_name(err));
+        st->stream_broken = true;
     }
 }
 
@@ -269,6 +274,7 @@ static void client_event_cb(const usb_host_client_event_msg_t* event_msg, void* 
 
     switch (event_msg->event) {
         case USB_HOST_CLIENT_EVENT_NEW_DEV:
+            logger_printf("USB new device event: addr=%u", event_msg->new_dev.address);
             st->new_dev_addr = event_msg->new_dev.address;
             st->has_new_device = true;
             break;
@@ -313,6 +319,12 @@ static void usb_client_task(void* arg) {
         if (err != ESP_OK) {
             logger_printf("usb_host_client_handle_events failed: %s", esp_err_to_name(err));
             continue;
+        }
+
+        if (st->stream_broken) {
+            st->stream_broken = false;
+            logger_printf("USB MIDI stream broken, resetting active device state");
+            cleanup_midi_stream(st, true);
         }
 
         if (st->has_new_device) {
@@ -380,9 +392,10 @@ static void usb_client_task(void* arg) {
 
         if (st->has_gone_device) {
             st->has_gone_device = false;
-            if (st->dev_hdl == st->gone_dev_hdl) {
-                cleanup_midi_stream(st, false);
+            if (st->dev_hdl != nullptr) {
+                cleanup_midi_stream(st, true);
             }
+            st->gone_dev_hdl = nullptr;
         }
     }
 }
