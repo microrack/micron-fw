@@ -14,7 +14,7 @@ static AppConfig g_app_config = {
 };
 
 static void check_boot_mode_pin() {
-    set_led_mode(LedMode::All);
+    set_led_mode(LedMode::PreBoot);
     handle_led();
     delay(1000);
 
@@ -40,9 +40,9 @@ void setup() {
         const UsbHostConfig usb_host_config = {};
         usb_host_init(usb_host_config);
     }
-    
+
+    set_led_mode(LedMode::Normal);
     net_init(g_app_config);
-    
 }
 
 // loop must contain only unblocking operations except short I/O operations
@@ -66,15 +66,15 @@ void loop() {
 
     switch (net_get_state()) {
         case NetState::Connecting:
-            set_led_mode(LedMode::Connecting);
+            set_led_net(LedNet::Connecting);
             break;
         case NetState::Ap:
-            set_led_mode(LedMode::Ap);
+            set_led_net(LedNet::Ap);
             break;
         case NetState::Client:
-            set_led_mode(LedMode::Connected);
+            set_led_net(LedNet::Connected);
             break;
     }
-    
+
     handle_led();
 }

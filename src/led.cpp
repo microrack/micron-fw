@@ -7,10 +7,12 @@
 static constexpr uint8_t LED_BRIGHTNESS = 96;
 static constexpr uint16_t STEP_MS = 50;
 static constexpr uint16_t CONNECTING_BLINK_MS = 150;
+static constexpr uint8_t TRIGGER_COUNT = 5;
 
 static CRGB leds[BOARD_LED_COUNT];
-static bool manual_led_state[BOARD_LED_COUNT] = {false};
 static LedMode led_mode = LedMode::Boot;
+static LedNet led_net = LedNet::Connecting;
+static bool trigger_states[TRIGGER_COUNT] = {false};
 static uint32_t mode_last_ms = 0;
 static bool connecting_led_on = false;
 
@@ -36,7 +38,7 @@ void set_led_mode(LedMode mode) {
         case LedMode::Boot:
             mode_last_ms = 0;
             break;
-        case LedMode::Connecting:
+        case LedMode::Normal:
             mode_last_ms = 0;
             connecting_led_on = false;
             break;
@@ -45,11 +47,23 @@ void set_led_mode(LedMode mode) {
     }
 }
 
-void set_led(uint8_t led_index, bool state) {
-    if (led_index >= BOARD_LED_COUNT) {
+void set_led_net(LedNet net) {
+    if (led_net == net) {
         return;
     }
-    manual_led_state[led_index] = state;
+
+    led_net = net;
+    if (led_net == LedNet::Connecting) {
+        mode_last_ms = 0;
+        connecting_led_on = false;
+    }
+}
+
+void set_led_trigger(uint8_t idx, bool state) {
+    if (idx >= TRIGGER_COUNT) {
+        return;
+    }
+    trigger_states[idx] = state;
 }
 
 void init_led() {
@@ -63,10 +77,6 @@ void handle_led() {
     const uint32_t now = millis();
 
     switch (led_mode) {
-        case LedMode::Off:
-            fill_solid(leds, BOARD_LED_COUNT, CRGB::White);
-            break;
-
         case LedMode::Boot: {
             if (now - mode_last_ms < STEP_MS) {
                 return;
@@ -83,33 +93,33 @@ void handle_led() {
             break;
         }
 
-        case LedMode::Connecting:
-            if (now - mode_last_ms >= CONNECTING_BLINK_MS) {
-                mode_last_ms = now;
-                connecting_led_on = !connecting_led_on;
-            }
-            fill_solid(leds, BOARD_LED_COUNT, CRGB::Black);
-            leds[0] = connecting_led_on ? CRGB::Green : CRGB::Black;
-            break;
-
-        case LedMode::Ap:
-            fill_solid(leds, BOARD_LED_COUNT, CRGB::Black);
-            leds[0] = CRGB::Red;
-            break;
-
-        case LedMode::Connected:
-            fill_solid(leds, BOARD_LED_COUNT, CRGB::Black);
-            leds[0] = CRGB::Green;
-            break;
-
-        case LedMode::Manual:
-            for (uint8_t i = 0; i < BOARD_LED_COUNT; i++) {
-                leds[i] = manual_led_state[i] ? CRGB::White : CRGB::Black;
-            }
-            break;
-
-        case LedMode::All:
+        case LedMode::PreBoot:
             fill_solid(leds, BOARD_LED_COUNT, CRGB::White);
+            break;
+
+        case LedMode::Normal:
+            fill_solid(leds, BOARD_LED_COUNT, CRGB::Black);
+
+            switch (led_net) {
+                case LedNet::Connecting:
+                    if (now - mode_last_ms >= CONNECTING_BLINK_MS) {
+                        mode_last_ms = now;
+                        connecting_led_on = !connecting_led_on;
+                    }
+                    leds[0] = connecting_led_on ? CRGB::Green : CRGB::Black;
+                    break;
+                case LedNet::Ap:
+                    leds[0] = CRGB::Red;
+                    break;
+                case LedNet::Connected:
+                    leds[0] = CRGB::Green;
+                    break;
+            }
+
+            for (uint8_t idx = 0; idx < TRIGGER_COUNT; ++idx) {
+                const uint8_t led_idx = (BOARD_LED_COUNT - 1) - idx;
+                leds[led_idx] = trigger_states[idx] ? CRGB::White : CRGB::Black;
+            }
             break;
     }
 
