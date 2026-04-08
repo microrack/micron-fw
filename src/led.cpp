@@ -7,12 +7,12 @@
 static constexpr uint8_t LED_BRIGHTNESS = 96;
 static constexpr uint16_t STEP_MS = 50;
 static constexpr uint16_t CONNECTING_BLINK_MS = 150;
-static constexpr uint8_t TRIGGER_COUNT = 5;
+static constexpr uint8_t GATE_COUNT = 5;
 
 static CRGB leds[BOARD_LED_COUNT];
 static LedMode led_mode = LedMode::Boot;
 static LedNet led_net = LedNet::Connecting;
-static bool trigger_states[TRIGGER_COUNT] = {false};
+static bool gate_states[GATE_COUNT] = {false};
 static uint32_t mode_last_ms = 0;
 static bool connecting_led_on = false;
 
@@ -59,11 +59,11 @@ void set_led_net(LedNet net) {
     }
 }
 
-void set_led_trigger(uint8_t idx, bool state) {
-    if (idx >= TRIGGER_COUNT) {
+void set_led_gate(uint8_t idx, bool state) {
+    if (idx >= GATE_COUNT) {
         return;
     }
-    trigger_states[idx] = state;
+    gate_states[idx] = state;
 }
 
 void init_led() {
@@ -116,9 +116,9 @@ void handle_led() {
                     break;
             }
 
-            for (uint8_t idx = 0; idx < TRIGGER_COUNT; ++idx) {
+            for (uint8_t idx = 0; idx < GATE_COUNT; ++idx) {
                 const uint8_t led_idx = (BOARD_LED_COUNT - 1) - idx;
-                leds[led_idx] = trigger_states[idx] ? CRGB::White : CRGB::Black;
+                leds[led_idx] = gate_states[idx] ? CRGB::White : CRGB::Black;
             }
             break;
     }

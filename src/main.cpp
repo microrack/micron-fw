@@ -2,8 +2,10 @@
 
 #include "board.h"
 #include "config.h"
+#include "gate.h"
 #include "led.h"
 #include "logger.h"
+#include "mcp4728.h"
 #include "net.h"
 #include "ota.h"
 #include "usb_host.h"
@@ -12,6 +14,20 @@ static AppConfig g_app_config = {
     .usb = false,
     .wifi = false,
 };
+
+namespace {
+constexpr uint8_t GATE_DAC_CHANNEL_COUNT = 4;
+constexpr uint16_t DAC_FULL = 0xFFF;
+constexpr uint32_t BLINK_ON_MS = 100;
+constexpr uint32_t BLINK_CYCLE_MS = 500;  // 100 ms on + 400 ms off
+}  // namespace
+
+void set_gate(uint8_t idx, bool state) {
+    set_led_gate(idx, state);
+    if (idx < GATE_DAC_CHANNEL_COUNT) {
+        mcp4728_write_channel(idx, state ? DAC_FULL : 0);
+    }
+}
 
 static void check_boot_mode_pin() {
     set_led_mode(LedMode::PreBoot);
@@ -27,6 +43,8 @@ static void check_boot_mode_pin() {
 }
 void setup() {
     pinMode(TOUCH_PIN, INPUT);
+    pinMode(BLINK_PIN, OUTPUT);
+    init_mcp4728();
     init_led();
     logger_init();
     ota_init();
@@ -47,6 +65,9 @@ void setup() {
 
 // loop must contain only unblocking operations except short I/O operations
 void loop() {
+    const uint32_t blink_phase = millis() % BLINK_CYCLE_MS;
+    digitalWrite(BLINK_PIN, blink_phase < BLINK_ON_MS ? HIGH : LOW);
+
     static int prev_touch_state = 0;
     const int touch_state = digitalRead(TOUCH_PIN);
     const bool pressed_edge = (prev_touch_state == 0) && (touch_state == 1);
