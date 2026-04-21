@@ -7,6 +7,7 @@
 static constexpr uint8_t LED_BRIGHTNESS = 96;
 static constexpr uint16_t STEP_MS = 50;
 static constexpr uint16_t CONNECTING_BLINK_MS = 150;
+static constexpr uint32_t SHOW_MIN_INTERVAL_US = 10000;
 static constexpr uint8_t GATE_COUNT = 5;
 
 static CRGB leds[BOARD_LED_COUNT];
@@ -15,8 +16,18 @@ static LedNet led_net = LedNet::Connecting;
 static bool gate_states[GATE_COUNT] = {false};
 static uint32_t mode_last_ms = 0;
 static bool connecting_led_on = false;
+static uint32_t last_show_us = 0;
 
-// Перебор базовых цветов на каждом диоде по очереди, шаг 50 мс.
+static void show_leds_throttled() {
+    const uint32_t t = micros();
+    if (last_show_us != 0 && (t - last_show_us) < SHOW_MIN_INTERVAL_US) {
+        return;
+    }
+    FastLED.show();
+    last_show_us = t;
+}
+
+// Cycle through base colors on each LED in turn (STEP_MS per step).
 static constexpr uint8_t COLOR_COUNT = 7;
 static const CRGB COLORS[COLOR_COUNT] = {
     CRGB::Red,
@@ -71,6 +82,7 @@ void init_led() {
     FastLED.setBrightness(LED_BRIGHTNESS);
     fill_solid(leds, BOARD_LED_COUNT, CRGB::Black);
     FastLED.show();
+    last_show_us = micros();
 }
 
 void handle_led() {
@@ -123,5 +135,5 @@ void handle_led() {
             break;
     }
 
-    FastLED.show();
+    show_leds_throttled();
 }

@@ -2,4 +2,11 @@
 
 #include <stdint.h>
 
-void midi_on_usb_packet(const uint8_t packet[4]);
+#include "gadget_handler.h"
+
+const char* midi_event_type_to_str(MidiEventType type);
+MidiEvent midi_parse_usb_packet(const uint8_t packet[4]);
+
+void midi_input_init();
+void midi_input_poll();
+bool midi_input_try_enqueue_usb_packet(const uint8_t packet[4]);

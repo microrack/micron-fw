@@ -1,69 +1,50 @@
 #include "net.h"
+#include "cpu_affinity.h"
 #include "logger.h"
 
 #include <Arduino.h>
 #include <WiFi.h>
 #include <string.h>
 
-namespace {
-constexpr const char* kApSsid = "PLTRNK";
-constexpr uint16_t kServerPort = 2323;
-constexpr size_t kMaxClients = 4;
-constexpr size_t kMaxMessageLen = 160;
-constexpr uint32_t kClientConnectTimeoutMs = 10000;
+extern "C" {
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include "freertos/task.h"
+}
 
-WiFiServer g_server(kServerPort);
-WiFiClient g_clients[kMaxClients];
-bool g_net_enabled = false;
-bool g_server_started = false;
-NetState g_net_state = NetState::Ap;
-char g_sta_ssid[33] = {};
-char g_sta_password[65] = {};
-uint32_t g_connect_started_ms = 0;
+static constexpr const char* kApSsid = "PLTRNK";
+static constexpr uint16_t kServerPort = 2323;
+static constexpr size_t kMaxClients = 4;
+static constexpr size_t kMaxMessageLen = 160;
+static constexpr uint32_t kClientConnectTimeoutMs = 10000;
 
-void stop_server_and_clients() {
-    if (g_server_started) {
-        g_server.stop();
-        g_server_started = false;
-    }
+static constexpr UBaseType_t kLogSendTaskPriority = 5;
+static constexpr uint32_t kLogSendTaskStackWords = 4096;
+static constexpr TickType_t kLogSendWaitTicks = pdMS_TO_TICKS(500);
 
+static WiFiServer g_server(kServerPort);
+static WiFiClient g_clients[kMaxClients];
+static bool g_net_enabled = false;
+static bool g_server_started = false;
+static NetState g_net_state = NetState::Ap;
+static char g_sta_ssid[33] = {};
+static char g_sta_password[65] = {};
+static uint32_t g_connect_started_ms = 0;
+
+static SemaphoreHandle_t g_clients_mutex = nullptr;
+static SemaphoreHandle_t g_log_send_wakeup = nullptr;
+static TaskHandle_t g_log_send_task = nullptr;
+
+static void broadcast_one_message_locked(const char* message) {
     for (size_t i = 0; i < kMaxClients; ++i) {
-        if (g_clients[i]) {
-            g_clients[i].stop();
+        if (g_clients[i] && g_clients[i].connected()) {
+            g_clients[i].print(message);
+            g_clients[i].print('\n');
         }
     }
 }
 
-void start_server_if_needed() {
-    if (g_server_started) {
-        return;
-    }
-    g_server.begin();
-    g_server.setNoDelay(true);
-    g_server_started = true;
-}
-
-void accept_new_clients() {
-    WiFiClient new_client = g_server.accept();
-    if (!new_client) {
-        return;
-    }
-
-    for (size_t i = 0; i < kMaxClients; ++i) {
-        if (!g_clients[i] || !g_clients[i].connected()) {
-            if (g_clients[i]) {
-                g_clients[i].stop();
-            }
-            g_clients[i] = new_client;
-            return;
-        }
-    }
-
-    // No free slots, reject the incoming client.
-    new_client.stop();
-}
-
-bool has_connected_clients() {
+static bool prune_clients_and_has_any_locked() {
     bool has_any = false;
     for (size_t i = 0; i < kMaxClients; ++i) {
         if (!g_clients[i]) {
@@ -78,15 +59,142 @@ bool has_connected_clients() {
     return has_any;
 }
 
-void broadcast_message(const char* message) {
+static void stop_server_and_clients_locked() {
+    if (g_server_started) {
+        g_server.stop();
+        g_server_started = false;
+    }
+
     for (size_t i = 0; i < kMaxClients; ++i) {
-        if (g_clients[i] && g_clients[i].connected()) {
-            g_clients[i].print(message);
-            g_clients[i].print('\n');
+        if (g_clients[i]) {
+            g_clients[i].stop();
         }
     }
 }
-}  // namespace
+
+static void stop_server_and_clients() {
+    if (g_clients_mutex == nullptr) {
+        return;
+    }
+    if (xSemaphoreTake(g_clients_mutex, portMAX_DELAY) != pdTRUE) {
+        return;
+    }
+    stop_server_and_clients_locked();
+    xSemaphoreGive(g_clients_mutex);
+}
+
+static void start_server_if_needed() {
+    if (g_server_started) {
+        return;
+    }
+    g_server.begin();
+    g_server.setNoDelay(true);
+    g_server_started = true;
+}
+
+static void accept_new_clients() {
+    WiFiClient new_client = g_server.accept();
+    if (!new_client) {
+        return;
+    }
+
+    if (g_clients_mutex == nullptr || xSemaphoreTake(g_clients_mutex, portMAX_DELAY) != pdTRUE) {
+        new_client.stop();
+        return;
+    }
+
+    bool accepted = false;
+    for (size_t i = 0; i < kMaxClients; ++i) {
+        if (!g_clients[i] || !g_clients[i].connected()) {
+            if (g_clients[i]) {
+                g_clients[i].stop();
+            }
+            g_clients[i] = new_client;
+            accepted = true;
+            break;
+        }
+    }
+
+    if (!accepted) {
+        new_client.stop();
+    }
+
+    xSemaphoreGive(g_clients_mutex);
+
+    if (accepted && g_log_send_wakeup != nullptr) {
+        xSemaphoreGive(g_log_send_wakeup);
+    }
+}
+
+static void log_tcp_send_task(void* arg) {
+    (void)arg;
+    char log_message[kMaxMessageLen];
+
+    for (;;) {
+        if (g_log_send_wakeup != nullptr) {
+            xSemaphoreTake(g_log_send_wakeup, kLogSendWaitTicks);
+        } else {
+            vTaskDelay(kLogSendWaitTicks);
+        }
+
+        if (!g_net_enabled) {
+            continue;
+        }
+
+        if (g_clients_mutex == nullptr) {
+            continue;
+        }
+
+        if (xSemaphoreTake(g_clients_mutex, portMAX_DELAY) != pdTRUE) {
+            continue;
+        }
+        const bool has_clients = prune_clients_and_has_any_locked();
+        xSemaphoreGive(g_clients_mutex);
+
+        if (!has_clients) {
+            continue;
+        }
+
+        while (logger_get_next(log_message, sizeof(log_message))) {
+            if (xSemaphoreTake(g_clients_mutex, portMAX_DELAY) != pdTRUE) {
+                break;
+            }
+            broadcast_one_message_locked(log_message);
+            xSemaphoreGive(g_clients_mutex);
+        }
+    }
+}
+
+static void net_notify_log_pending() {
+    if (!g_net_enabled || g_log_send_wakeup == nullptr) {
+        return;
+    }
+    xSemaphoreGive(g_log_send_wakeup);
+}
+
+static void ensure_log_forwarder_started() {
+    if (g_log_send_task != nullptr) {
+        return;
+    }
+    if (g_clients_mutex == nullptr) {
+        g_clients_mutex = xSemaphoreCreateMutex();
+    }
+    if (g_log_send_wakeup == nullptr) {
+        g_log_send_wakeup = xSemaphoreCreateBinary();
+    }
+
+    logger_set_output_notify(net_notify_log_pending);
+
+    xTaskCreatePinnedToCore(
+        log_tcp_send_task,
+        "log_tcp",
+        kLogSendTaskStackWords,
+        nullptr,
+        kLogSendTaskPriority,
+        &g_log_send_task,
+        kAppTaskCore
+    );
+}
 
 void net_init(const AppConfig& config) {
     g_net_enabled = config.wifi;
@@ -96,10 +204,17 @@ void net_init(const AppConfig& config) {
     g_sta_password[sizeof(g_sta_password) - 1] = '\0';
 
     if (!g_net_enabled) {
+        logger_set_output_notify(nullptr);
+        if (g_log_send_task != nullptr) {
+            vTaskDelete(g_log_send_task);
+            g_log_send_task = nullptr;
+        }
         stop_server_and_clients();
         WiFi.mode(WIFI_OFF);
         return;
     }
+
+    ensure_log_forwarder_started();
 
     if (strlen(g_sta_ssid) == 0) {
         net_start_ap();
@@ -112,6 +227,8 @@ void net_start_ap() {
     if (!g_net_enabled) {
         return;
     }
+
+    ensure_log_forwarder_started();
 
     stop_server_and_clients();
     WiFi.mode(WIFI_AP);
@@ -128,6 +245,8 @@ void net_start_client() {
         net_start_ap();
         return;
     }
+
+    ensure_log_forwarder_started();
 
     stop_server_and_clients();
     WiFi.mode(WIFI_STA);
@@ -156,12 +275,4 @@ void handle_net() {
     }
 
     accept_new_clients();
-    if (!has_connected_clients()) {
-        return;
-    }
-
-    char log_message[kMaxMessageLen];
-    while (logger_get_next(log_message, sizeof(log_message))) {
-        broadcast_message(log_message);
-    }
 }

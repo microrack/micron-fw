@@ -13,6 +13,8 @@ namespace {
 constexpr size_t kLogCapacity = 64;
 constexpr size_t kLogMessageLen = 160;
 
+void (*g_output_notify)(void) = nullptr;
+
 SemaphoreHandle_t g_log_mutex = nullptr;
 char g_log_ring[kLogCapacity][kLogMessageLen] = {};
 size_t g_log_head = 0;
@@ -32,6 +34,10 @@ void logger_init() {
     if (g_log_mutex == nullptr) {
         g_log_mutex = xSemaphoreCreateMutex();
     }
+}
+
+void logger_set_output_notify(void (*notify)(void)) {
+    g_output_notify = notify;
 }
 
 void logger_printf(const char* fmt, ...) {
@@ -59,6 +65,10 @@ void logger_printf(const char* fmt, ...) {
     ++g_log_count;
 
     unlock_logs();
+
+    if (g_output_notify != nullptr) {
+        g_output_notify();
+    }
 }
 
 bool logger_get_next(char* out_message, size_t out_message_size) {

@@ -1,4 +1,6 @@
 #include "usb_host.h"
+#include "cpu_affinity.h"
+#include "gadget_handler.h"
 #include "logger.h"
 #include "midi.h"
 
@@ -59,6 +61,24 @@ static void log_usb_string_descriptor(const char* label, const usb_str_desc_t* s
     }
     text[out_idx] = '\0';
     logger_printf("%s: %s", label, text);
+}
+
+static void usb_string_descriptor_to_ascii(const usb_str_desc_t* str_desc, char* out, size_t out_size) {
+    if (out == nullptr || out_size == 0) {
+        return;
+    }
+    out[0] = '\0';
+    if (str_desc == nullptr || str_desc->bLength <= 2) {
+        return;
+    }
+
+    const size_t char_count = (str_desc->bLength - 2) / 2;
+    size_t out_idx = 0;
+    for (size_t i = 0; i < char_count && (out_idx + 1) < out_size; ++i) {
+        const uint16_t ch = str_desc->wData[i];
+        out[out_idx++] = (ch >= 0x20 && ch <= 0x7E) ? static_cast<char>(ch) : '?';
+    }
+    out[out_idx] = '\0';
 }
 
 static bool find_midi_in_endpoint(usb_device_handle_t dev_hdl, MidiInEndpointInfo* out_info) {
@@ -169,7 +189,7 @@ static void midi_in_transfer_cb(usb_transfer_t* transfer) {
 
     if (transfer->status == USB_TRANSFER_STATUS_COMPLETED) {
         for (int i = 0; (i + 3) < transfer->actual_num_bytes; i += 4) {
-            midi_on_usb_packet(&transfer->data_buffer[i]);
+            (void)midi_input_try_enqueue_usb_packet(&transfer->data_buffer[i]);
         }
         if ((transfer->actual_num_bytes % 4) != 0) {
             logger_printf("USB MIDI short packet tail: %d bytes", transfer->actual_num_bytes % 4);
@@ -325,6 +345,7 @@ static void usb_client_task(void* arg) {
             st->stream_broken = false;
             logger_printf("USB MIDI stream broken, resetting active device state");
             cleanup_midi_stream(st, true);
+            gadget_handler_on_usb_disconnect();
         }
 
         if (st->has_new_device) {
@@ -363,6 +384,55 @@ static void usb_client_task(void* arg) {
                 logger_printf("usb_host_device_info failed: %s", esp_err_to_name(err));
             }
 
+            char manufacturer_name[64];
+            char product_name[64];
+            manufacturer_name[0] = '\0';
+            product_name[0] = '\0';
+            if (err == ESP_OK) {
+                usb_string_descriptor_to_ascii(
+                    dev_info.str_desc_manufacturer, manufacturer_name, sizeof(manufacturer_name));
+                usb_string_descriptor_to_ascii(dev_info.str_desc_product, product_name, sizeof(product_name));
+            }
+
+            const UsbDeviceContext context = {
+                .vid = desc->idVendor,
+                .pid = desc->idProduct,
+                .product_name = product_name,
+                .manufacturer_name = manufacturer_name,
+            };
+
+            GadgetHandler* selected_handler = nullptr;
+            for (size_t i = 0; i < gadget_handler_count(); ++i) {
+                GadgetHandler* candidate = gadget_handler_at(i);
+                if (candidate == nullptr) {
+                    logger_printf("GadgetHandler probe[%u]: <null> -> reject", static_cast<unsigned>(i));
+                    continue;
+                }
+
+                const bool accepted = candidate->probe(context);
+                logger_printf(
+                    "GadgetHandler probe[%u]: handler=%p -> %s",
+                    static_cast<unsigned>(i),
+                    static_cast<void*>(candidate),
+                    accepted ? "accept" : "reject"
+                );
+
+                if (accepted) {
+                    selected_handler = candidate;
+                    break;
+                }
+            }
+            if (selected_handler == nullptr) {
+                logger_printf(
+                    "USB device rejected by all GadgetHandlers: VID=%04X PID=%04X",
+                    desc->idVendor,
+                    desc->idProduct
+                );
+                usb_host_device_close(st->client, new_dev_hdl);
+                continue;
+            }
+            logger_printf("GadgetHandler selected: %p", static_cast<void*>(selected_handler));
+
             MidiInEndpointInfo midi_info;
             const bool has_midi_in = find_midi_in_endpoint(new_dev_hdl, &midi_info);
             if (st->dev_hdl != nullptr) {
@@ -387,6 +457,8 @@ static void usb_client_task(void* arg) {
             st->active_dev_addr = st->new_dev_addr;
             if (!setup_midi_stream(st)) {
                 cleanup_midi_stream(st, true);
+            } else {
+                gadget_handler_on_usb_gadget_ready(selected_handler);
             }
         }
 
@@ -396,6 +468,7 @@ static void usb_client_task(void* arg) {
                 cleanup_midi_stream(st, true);
             }
             st->gone_dev_hdl = nullptr;
+            gadget_handler_on_usb_disconnect();
         }
     }
 }
@@ -407,6 +480,6 @@ void usb_host_init(const UsbHostConfig& config) {
     }
     logger_printf("Starting USB Host example...");
 
-    xTaskCreatePinnedToCore(usb_daemon_task, "usb_daemon", 4096, nullptr, 20, nullptr, 0);
-    xTaskCreatePinnedToCore(usb_client_task, "usb_client", 4096, &g_host, 20, nullptr, 0);
+    xTaskCreatePinnedToCore(usb_daemon_task, "usb_daemon", 4096, nullptr, 20, nullptr, kAppTaskCore);
+    xTaskCreatePinnedToCore(usb_client_task, "usb_client", 4096, &g_host, 20, nullptr, kAppTaskCore);
 }

@@ -1,0 +1,136 @@
+#include "default_gadget_handler.h"
+
+#include <cmath>
+
+#include "gate.h"
+#include "logger.h"
+#include "midi.h"
+#include "timer_load_task.h"
+
+namespace {
+// MIDI channels 1..4 -> gates 0..3.
+static constexpr uint8_t GATE_CHANNEL_FIRST = 1;
+static constexpr uint8_t GATE_CHANNEL_LAST = 4;
+static uint8_t g_pressed_notes_per_channel[GATE_CHANNEL_LAST - GATE_CHANNEL_FIRST + 1] = {0};
+
+static bool channel_maps_to_gate(uint8_t midi_channel_1_to_16, uint8_t* out_gate_idx) {
+    if (midi_channel_1_to_16 < GATE_CHANNEL_FIRST || midi_channel_1_to_16 > GATE_CHANNEL_LAST) {
+        return false;
+    }
+    *out_gate_idx = static_cast<uint8_t>(midi_channel_1_to_16 - GATE_CHANNEL_FIRST);
+    return true;
+}
+
+constexpr uint8_t kGateCount = 5;  // indices 0..3 MIDI + gate 4 (LED)
+
+static float midi_note_to_hz(uint8_t note) {
+    return 440.0f * powf(2.0f, (static_cast<float>(note) - 69.0f) / 12.0f);
+}
+
+void update_led_gates_from_channel_counts() {
+    for (uint8_t ch = GATE_CHANNEL_FIRST; ch <= GATE_CHANNEL_LAST; ++ch) {
+        const uint8_t idx = static_cast<uint8_t>(ch - GATE_CHANNEL_FIRST);
+        set_gate(idx, g_pressed_notes_per_channel[idx] > 0);
+    }
+    set_gate(4, false);
+}
+
+static void turn_all_gates_off() {
+    for (uint8_t i = 0; i < (GATE_CHANNEL_LAST - GATE_CHANNEL_FIRST + 1); ++i) {
+        g_pressed_notes_per_channel[i] = 0;
+    }
+    for (uint8_t i = 0; i < kGateCount; ++i) {
+        set_gate(i, false);
+    }
+}
+
+void handle_note_event(const MidiEvent& event) {
+    uint8_t midi_channel = 0;
+    bool note_on = false;
+    bool note_off = false;
+
+    if (event.type == MidiEventType::NoteOn) {
+        midi_channel = event.data.note_on.channel;
+        const uint8_t note = event.data.note_on.note;
+        const uint8_t velocity = event.data.note_on.velocity;
+        logger_printf(
+            "DefaultGadgetHandler note: NoteOn ch=%u note=%u vel=%u",
+            static_cast<unsigned>(midi_channel),
+            static_cast<unsigned>(note),
+            static_cast<unsigned>(velocity)
+        );
+        if (velocity != 0) {
+            note_on = true;
+        } else {
+            note_off = true;
+        }
+    } else if (event.type == MidiEventType::NoteOff) {
+        midi_channel = event.data.note_off.channel;
+        logger_printf(
+            "DefaultGadgetHandler note: NoteOff ch=%u note=%u vel=%u",
+            static_cast<unsigned>(event.data.note_off.channel),
+            static_cast<unsigned>(event.data.note_off.note),
+            static_cast<unsigned>(event.data.note_off.velocity)
+        );
+        note_off = true;
+    } else {
+        return;
+    }
+
+    uint8_t gate_idx = 0;
+    if (!channel_maps_to_gate(midi_channel, &gate_idx)) {
+        return;
+    }
+
+    if (note_on) {
+        if (g_pressed_notes_per_channel[gate_idx] < 255) {
+            ++g_pressed_notes_per_channel[gate_idx];
+        }
+        timer_load_set_dac_sine_hz(midi_note_to_hz(event.data.note_on.note));
+        update_led_gates_from_channel_counts();
+        return;
+    }
+
+    if (note_off) {
+        if (g_pressed_notes_per_channel[gate_idx] > 0) {
+            --g_pressed_notes_per_channel[gate_idx];
+        }
+        update_led_gates_from_channel_counts();
+    }
+}
+
+static void log_midi_event(const MidiEvent& event) {
+    logger_printf("DefaultGadgetHandler MIDI: %s", midi_event_type_to_str(event.type));
+}
+
+class DefaultGadgetHandler : public GadgetHandler {
+   public:
+    bool probe(const UsbDeviceContext& context) override {
+        (void)context;
+        return true;
+    }
+
+    void midi(const MidiEvent& event) override {
+        handle_note_event(event);
+        log_midi_event(event);
+    }
+
+    void tick(float dt_sec, uint32_t now_ms) override {
+        (void)dt_sec;
+        (void)now_ms;
+    }
+
+    void enter() override { logger_printf("DefaultGadgetHandler: enter"); }
+
+    void exit() override {
+        logger_printf("DefaultGadgetHandler: exit");
+        turn_all_gates_off();
+    }
+};
+
+DefaultGadgetHandler g_default_handler;
+}  // namespace
+
+GadgetHandler& default_gadget_handler_get() {
+    return g_default_handler;
+}

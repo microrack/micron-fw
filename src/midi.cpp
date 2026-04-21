@@ -1,109 +1,200 @@
 #include "midi.h"
 
-#include "gate.h"
-#include "logger.h"
+#include "gadget_handler.h"
 
-namespace {
-// MIDI каналы 1..4 -> гейты 0..3 (см. led: idx 0 = LED 8 .. idx 4 = LED 4).
-static constexpr uint8_t GATE_CHANNEL_FIRST = 1;
-static constexpr uint8_t GATE_CHANNEL_LAST = 4;
-static uint8_t g_pressed_notes_per_channel[GATE_CHANNEL_LAST - GATE_CHANNEL_FIRST + 1] = {0};
+extern "C" {
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+}
 
-const char* midi_cin_to_type(uint8_t cin) {
+struct MidiUsbRawPacket {
+    uint8_t bytes[4];
+};
+
+static QueueHandle_t g_midi_usb_queue = nullptr;
+static constexpr UBaseType_t MIDI_USB_QUEUE_LENGTH = 64;
+
+static MidiEventType midi_event_type_from_cin(uint8_t cin) {
     switch (cin) {
         case 0x8:
-            return "NoteOff";
+            return MidiEventType::NoteOff;
         case 0x9:
-            return "NoteOn";
+            return MidiEventType::NoteOn;
         case 0xA:
-            return "PolyAftertouch";
+            return MidiEventType::PolyAftertouch;
         case 0xB:
-            return "ControlChange";
+            return MidiEventType::ControlChange;
         case 0xC:
-            return "ProgramChange";
+            return MidiEventType::ProgramChange;
         case 0xD:
-            return "ChannelAftertouch";
+            return MidiEventType::ChannelAftertouch;
         case 0xE:
-            return "PitchBend";
+            return MidiEventType::PitchBend;
         case 0x2:
-            return "SysCommon2B";
+            return MidiEventType::SysCommon2B;
         case 0x3:
-            return "SysCommon3B";
+            return MidiEventType::SysCommon3B;
         case 0x4:
-            return "SysExStartCont";
+            return MidiEventType::SysExStartCont;
         case 0x5:
-            return "SysExEnd1B";
+            return MidiEventType::SysExEnd1B;
         case 0x6:
-            return "SysExEnd2B";
+            return MidiEventType::SysExEnd2B;
         case 0x7:
-            return "SysExEnd3B";
+            return MidiEventType::SysExEnd3B;
         case 0xF:
+            return MidiEventType::SingleByte;
+        default:
+            return MidiEventType::Unknown;
+    }
+}
+
+const char* midi_event_type_to_str(MidiEventType type) {
+    switch (type) {
+        case MidiEventType::NoteOff:
+            return "NoteOff";
+        case MidiEventType::NoteOn:
+            return "NoteOn";
+        case MidiEventType::PolyAftertouch:
+            return "PolyAftertouch";
+        case MidiEventType::ControlChange:
+            return "ControlChange";
+        case MidiEventType::ProgramChange:
+            return "ProgramChange";
+        case MidiEventType::ChannelAftertouch:
+            return "ChannelAftertouch";
+        case MidiEventType::PitchBend:
+            return "PitchBend";
+        case MidiEventType::SysCommon2B:
+            return "SysCommon2B";
+        case MidiEventType::SysCommon3B:
+            return "SysCommon3B";
+        case MidiEventType::SysExStartCont:
+            return "SysExStartCont";
+        case MidiEventType::SysExEnd1B:
+            return "SysExEnd1B";
+        case MidiEventType::SysExEnd2B:
+            return "SysExEnd2B";
+        case MidiEventType::SysExEnd3B:
+            return "SysExEnd3B";
+        case MidiEventType::SingleByte:
             return "SingleByte";
+        case MidiEventType::Unknown:
         default:
             return "Unknown";
     }
 }
 
-static bool channel_maps_to_gate(uint8_t midi_channel_1_to_16, uint8_t* out_gate_idx) {
-    if (midi_channel_1_to_16 < GATE_CHANNEL_FIRST || midi_channel_1_to_16 > GATE_CHANNEL_LAST) {
+MidiEvent midi_parse_usb_packet(const uint8_t packet[4]) {
+    MidiEvent event = {};
+    if (packet == nullptr) {
+        return event;
+    }
+
+    const uint8_t cin = packet[0] & 0x0F;
+    const uint8_t status = packet[1];
+    const uint8_t data1 = packet[2];
+    const uint8_t data2 = packet[3];
+    const uint8_t channel = static_cast<uint8_t>((status & 0x0F) + 1);
+
+    event.type = midi_event_type_from_cin(cin);
+
+    switch (event.type) {
+        case MidiEventType::NoteOn:
+            event.data.note_on.channel = channel;
+            event.data.note_on.note = data1;
+            event.data.note_on.velocity = data2;
+            break;
+        case MidiEventType::NoteOff:
+            event.data.note_off.channel = channel;
+            event.data.note_off.note = data1;
+            event.data.note_off.velocity = data2;
+            break;
+        case MidiEventType::PolyAftertouch:
+            event.data.poly_aftertouch.channel = channel;
+            event.data.poly_aftertouch.note = data1;
+            event.data.poly_aftertouch.pressure = data2;
+            break;
+        case MidiEventType::ControlChange:
+            event.data.control_change.channel = channel;
+            event.data.control_change.controller = data1;
+            event.data.control_change.value = data2;
+            break;
+        case MidiEventType::ProgramChange:
+            event.data.program_change.channel = channel;
+            event.data.program_change.program = data1;
+            break;
+        case MidiEventType::ChannelAftertouch:
+            event.data.channel_aftertouch.channel = channel;
+            event.data.channel_aftertouch.pressure = data1;
+            break;
+        case MidiEventType::PitchBend:
+            event.data.pitch_bend.channel = channel;
+            event.data.pitch_bend.value14 =
+                static_cast<uint16_t>((static_cast<uint16_t>(data2) << 7) | (data1 & 0x7F));
+            break;
+        case MidiEventType::SysCommon2B:
+            event.data.sys_common_2b.status = status;
+            event.data.sys_common_2b.data1 = data1;
+            break;
+        case MidiEventType::SysCommon3B:
+            event.data.sys_common_3b.status = status;
+            event.data.sys_common_3b.data1 = data1;
+            event.data.sys_common_3b.data2 = data2;
+            break;
+        case MidiEventType::SysExStartCont:
+        case MidiEventType::SysExEnd3B:
+            event.data.sysex_3b.byte0 = status;
+            event.data.sysex_3b.byte1 = data1;
+            event.data.sysex_3b.byte2 = data2;
+            break;
+        case MidiEventType::SysExEnd2B:
+            event.data.sysex_2b.byte0 = status;
+            event.data.sysex_2b.byte1 = data1;
+            break;
+        case MidiEventType::SysExEnd1B:
+            event.data.sysex_1b.byte0 = status;
+            break;
+        case MidiEventType::SingleByte:
+            event.data.single_byte.byte0 = status;
+            break;
+        case MidiEventType::Unknown:
+        default:
+            event.data.unknown.status = status;
+            event.data.unknown.data1 = data1;
+            event.data.unknown.data2 = data2;
+            break;
+    }
+
+    return event;
+}
+
+void midi_input_init() {
+    if (g_midi_usb_queue != nullptr) {
+        return;
+    }
+    g_midi_usb_queue = xQueueCreate(MIDI_USB_QUEUE_LENGTH, sizeof(MidiUsbRawPacket));
+}
+
+void midi_input_poll() {
+    if (g_midi_usb_queue == nullptr) {
+        return;
+    }
+    MidiUsbRawPacket pkt = {};
+    while (xQueueReceive(g_midi_usb_queue, &pkt, 0) == pdTRUE) {
+        const MidiEvent event = midi_parse_usb_packet(pkt.bytes);
+        gadget_handler_get().midi(event);
+    }
+}
+
+bool midi_input_try_enqueue_usb_packet(const uint8_t packet[4]) {
+    if (packet == nullptr || g_midi_usb_queue == nullptr) {
         return false;
     }
-    *out_gate_idx = static_cast<uint8_t>(midi_channel_1_to_16 - GATE_CHANNEL_FIRST);
-    return true;
-}
-
-void update_led_gates_from_channel_counts() {
-    for (uint8_t ch = GATE_CHANNEL_FIRST; ch <= GATE_CHANNEL_LAST; ++ch) {
-        const uint8_t idx = static_cast<uint8_t>(ch - GATE_CHANNEL_FIRST);
-        set_gate(idx, g_pressed_notes_per_channel[idx] > 0);
-    }
-    set_gate(4, false);
-}
-
-void handle_note_event(uint8_t cin, uint8_t status_byte, uint8_t velocity) {
-    const uint8_t msg_type = (status_byte >> 4) & 0x0F;
-    if (msg_type != 0x8 && msg_type != 0x9) {
-        return;
-    }
-
-    const uint8_t midi_channel = (status_byte & 0x0F) + 1;
-    uint8_t gate_idx = 0;
-    if (!channel_maps_to_gate(midi_channel, &gate_idx)) {
-        return;
-    }
-
-    if (cin == 0x9 && velocity != 0) {
-        if (g_pressed_notes_per_channel[gate_idx] < 255) {
-            ++g_pressed_notes_per_channel[gate_idx];
-        }
-        update_led_gates_from_channel_counts();
-        return;
-    }
-
-    if (cin == 0x8 || (cin == 0x9 && velocity == 0)) {
-        if (g_pressed_notes_per_channel[gate_idx] > 0) {
-            --g_pressed_notes_per_channel[gate_idx];
-        }
-        update_led_gates_from_channel_counts();
-    }
-}
-}  // namespace
-
-void midi_on_usb_packet(const uint8_t packet[4]) {
-    if (packet == nullptr) {
-        return;
-    }
-
-    const uint8_t cable = (packet[0] >> 4) & 0x0F;
-    const uint8_t cin = packet[0] & 0x0F;
-    handle_note_event(cin, packet[1], packet[3]);
-    logger_printf(
-        "MIDI pkt: cable=%u cin=0x%X type=%s data=%02X %02X %02X",
-        cable,
-        cin,
-        midi_cin_to_type(cin),
-        packet[1],
-        packet[2],
-        packet[3]
-    );
+    MidiUsbRawPacket pkt = {};
+    pkt.bytes[0] = packet[0];
+    pkt.bytes[1] = packet[1];
+    pkt.bytes[2] = packet[2];
+    pkt.bytes[3] = packet[3];
+    return xQueueSend(g_midi_usb_queue, &pkt, 0) == pdTRUE;
 }
