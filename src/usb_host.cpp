@@ -1,4 +1,7 @@
 #include "usb_host.h"
+
+#include <cstring>
+
 #include "cpu_affinity.h"
 #include "gadget_handler.h"
 #include "logger.h"
@@ -24,6 +27,7 @@ struct HostState {
     uint8_t midi_interface_number = 0;
     uint8_t midi_alternate_setting = 0;
     uint8_t midi_in_ep_addr = 0;
+    uint8_t midi_out_ep_addr = 0;
     uint8_t active_dev_addr = 0;
     bool midi_interface_claimed = false;
     volatile bool stream_broken = false;
@@ -146,6 +150,37 @@ static bool find_midi_in_endpoint(usb_device_handle_t dev_hdl, MidiInEndpointInf
     return out_info->found;
 }
 
+static bool find_midi_out_endpoint(usb_device_handle_t dev_hdl, uint8_t* out_ep_addr) {
+    const usb_config_desc_t* config_desc = nullptr;
+    if (usb_host_get_active_config_descriptor(dev_hdl, &config_desc) != ESP_OK || config_desc == nullptr) {
+        return false;
+    }
+
+    const uint8_t* ptr = config_desc->val;
+    const uint8_t* end = config_desc->val + config_desc->wTotalLength;
+    bool in_midi_interface = false;
+
+    while ((ptr + 2) <= end) {
+        const uint8_t len = ptr[0];
+        const uint8_t type = ptr[1];
+        if (len == 0 || (ptr + len) > end) {
+            break;
+        }
+        if (type == USB_B_DESCRIPTOR_TYPE_INTERFACE && len >= sizeof(usb_intf_desc_t)) {
+            const usb_intf_desc_t* intf = reinterpret_cast<const usb_intf_desc_t*>(ptr);
+            in_midi_interface = (intf->bInterfaceClass == 0x01) && (intf->bInterfaceSubClass == 0x03);
+        } else if (in_midi_interface && type == USB_B_DESCRIPTOR_TYPE_ENDPOINT && len >= sizeof(usb_ep_desc_t)) {
+            const usb_ep_desc_t* ep = reinterpret_cast<const usb_ep_desc_t*>(ptr);
+            if ((ep->bEndpointAddress & USB_B_ENDPOINT_ADDRESS_EP_DIR_MASK) == 0) {
+                *out_ep_addr = ep->bEndpointAddress;
+                return true;
+            }
+        }
+        ptr += len;
+    }
+    return false;
+}
+
 static void cleanup_midi_stream(HostState* st, bool close_device) {
     if (st == nullptr) {
         return;
@@ -175,6 +210,7 @@ static void cleanup_midi_stream(HostState* st, bool close_device) {
     st->midi_interface_number = 0;
     st->midi_alternate_setting = 0;
     st->midi_in_ep_addr = 0;
+    st->midi_out_ep_addr = 0;
     st->active_dev_addr = 0;
 }
 
@@ -257,6 +293,13 @@ static bool setup_midi_stream(HostState* st) {
         st->midi_in_ep_addr,
         static_cast<unsigned>(midi_info.max_packet_size)
     );
+
+    if (find_midi_out_endpoint(st->dev_hdl, &st->midi_out_ep_addr)) {
+        logger_printf("USB MIDI OUT endpoint: addr=0x%02X", st->midi_out_ep_addr);
+    } else {
+        logger_printf("USB MIDI OUT endpoint not found");
+    }
+
     return true;
 }
 
@@ -471,6 +514,38 @@ static void usb_client_task(void* arg) {
             gadget_handler_on_usb_disconnect();
         }
     }
+}
+
+static void midi_out_transfer_cb(usb_transfer_t* transfer) {
+    if (transfer != nullptr) {
+        usb_host_transfer_free(transfer);
+    }
+}
+
+bool usb_midi_send_packet(const uint8_t* data, size_t size) {
+    if (g_host.dev_hdl == nullptr || g_host.midi_out_ep_addr == 0) {
+        return false;
+    }
+    if (data == nullptr || size == 0) {
+        return false;
+    }
+    usb_transfer_t* xfer = nullptr;
+    if (usb_host_transfer_alloc(size, 0, &xfer) != ESP_OK || xfer == nullptr) {
+        return false;
+    }
+    memcpy(xfer->data_buffer, data, size);
+    xfer->device_handle = g_host.dev_hdl;
+    xfer->bEndpointAddress = g_host.midi_out_ep_addr;
+    xfer->num_bytes = static_cast<int>(size);
+    xfer->callback = midi_out_transfer_cb;
+    xfer->context = nullptr;
+    const esp_err_t err = usb_host_transfer_submit(xfer);
+    if (err != ESP_OK) {
+        logger_printf("usb_midi_send_packet: submit failed: %s", esp_err_to_name(err));
+        usb_host_transfer_free(xfer);
+        return false;
+    }
+    return true;
 }
 
 void usb_host_init(const UsbHostConfig& config) {

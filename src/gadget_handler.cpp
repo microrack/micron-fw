@@ -1,6 +1,6 @@
 #include "gadget_handler.h"
 
-#include "default_gadget_handler.h"
+#include "handlers/default_gadget_handler.h"
 
 extern "C" {
 #include "freertos/FreeRTOS.h"

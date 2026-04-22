@@ -1,5 +1,7 @@
 #include "profiling.h"
 
+#if PROFILING
+
 #include <atomic>
 #include <cfloat>
 
@@ -213,3 +215,5 @@ void profiling_tick() {
     last_report_ms = now_ms;
     skip_next_loop_hz_sample = true;
 }
+
+#endif  // PROFILING

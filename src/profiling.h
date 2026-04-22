@@ -1,6 +1,9 @@
 #pragma once
 
 #include <Arduino.h>
+#include "board.h"
+
+#if PROFILING
 
 enum class LoopProfileSlot : uint8_t {
     ProfilingTick,
@@ -23,3 +26,12 @@ void profiling_add_slot(LoopProfileSlot slot, uint32_t dt_us);
         (void)(expr); \
         profiling_add_slot((slot), micros() - _lp_t0); \
     } while (0)
+
+#else  // PROFILING
+
+inline void profiling_init() {}
+inline void profiling_tick() {}
+
+#define LOOP_PROFILE(slot, expr) (void)(expr)
+
+#endif  // PROFILING

@@ -1,6 +1,7 @@
 #include "midi.h"
 
 #include "gadget_handler.h"
+#include "usb_host.h"
 
 extern "C" {
 #include "freertos/FreeRTOS.h"
@@ -185,6 +186,16 @@ void midi_input_poll() {
         const MidiEvent event = midi_parse_usb_packet(pkt.bytes);
         gadget_handler_get().midi(event);
     }
+}
+
+bool midi_send_cc(uint8_t channel_1_to_16, uint8_t controller, uint8_t value) {
+    const uint8_t packet[4] = {
+        0x0B,  // CIN: Control Change
+        static_cast<uint8_t>(0xB0 | ((channel_1_to_16 - 1) & 0x0F)),
+        controller,
+        value,
+    };
+    return usb_midi_send_packet(packet, sizeof(packet));
 }
 
 bool midi_input_try_enqueue_usb_packet(const uint8_t packet[4]) {
