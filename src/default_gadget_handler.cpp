@@ -1,11 +1,8 @@
 #include "default_gadget_handler.h"
 
-#include <cmath>
-
 #include "gate.h"
 #include "logger.h"
 #include "midi.h"
-#include "timer_load_task.h"
 
 namespace {
 // MIDI channels 1..4 -> gates 0..3.
@@ -22,10 +19,6 @@ static bool channel_maps_to_gate(uint8_t midi_channel_1_to_16, uint8_t* out_gate
 }
 
 constexpr uint8_t kGateCount = 5;  // indices 0..3 MIDI + gate 4 (LED)
-
-static float midi_note_to_hz(uint8_t note) {
-    return 440.0f * powf(2.0f, (static_cast<float>(note) - 69.0f) / 12.0f);
-}
 
 void update_led_gates_from_channel_counts() {
     for (uint8_t ch = GATE_CHANNEL_FIRST; ch <= GATE_CHANNEL_LAST; ++ch) {
@@ -86,7 +79,6 @@ void handle_note_event(const MidiEvent& event) {
         if (g_pressed_notes_per_channel[gate_idx] < 255) {
             ++g_pressed_notes_per_channel[gate_idx];
         }
-        timer_load_set_dac_sine_hz(midi_note_to_hz(event.data.note_on.note));
         update_led_gates_from_channel_counts();
         return;
     }

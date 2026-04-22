@@ -12,7 +12,6 @@
 #include "net.h"
 #include "ota.h"
 #include "profiling.h"
-#include "timer_load_task.h"
 #include "usb_host.h"
 
 static AppConfig g_app_config = {
@@ -53,7 +52,6 @@ void setup() {
     init_led();
     logger_init();
     profiling_init();
-    timer_load_task_init();
     ota_init();
     g_app_config = config_init();
 
