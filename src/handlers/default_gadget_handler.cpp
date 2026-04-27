@@ -1,6 +1,6 @@
 #include "default_gadget_handler.h"
 
-#include "gate.h"
+#include "cv_gate.h"
 #include "logger.h"
 #include "midi.h"
 

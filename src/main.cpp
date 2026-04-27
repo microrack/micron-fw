@@ -4,7 +4,7 @@
 #include "config.h"
 #include "handlers/default_gadget_handler.h"
 #include "handlers/orbita_handler.h"
-#include "gate.h"
+#include "cv_gate.h"
 #include "gadget_handler.h"
 #include "led.h"
 #include "logger.h"
@@ -21,18 +21,9 @@ static AppConfig g_app_config = {
 };
 
 namespace {
-constexpr uint8_t GATE_DAC_CHANNEL_COUNT = 4;
-constexpr uint16_t DAC_FULL = 0xFFF;
 constexpr uint32_t BLINK_ON_MS = 100;
 constexpr uint32_t BLINK_CYCLE_MS = 500;  // 100 ms on + 400 ms off
 }  // namespace
-
-void set_gate(uint8_t idx, LedGateColor color) {
-    set_led_gate(idx, color);
-    if (idx < GATE_DAC_CHANNEL_COUNT) {
-        // mcp4728_write_channel(idx, color != LedGateColor::Off ? DAC_FULL : 0);
-    }
-}
 
 static void check_boot_mode_pin() {
     set_led_mode(LedMode::PreBoot);
