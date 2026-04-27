@@ -2,4 +2,6 @@
 
 #include <stdint.h>
 
-void set_gate(uint8_t idx, bool state);
+#include "led.h"
+
+void set_gate(uint8_t idx, LedGateColor color);

@@ -14,8 +14,19 @@ enum class LedNet : uint8_t {
     Connected = 2,
 };
 
+enum class LedGateColor : uint8_t {
+    Off = 0,
+    Red,
+    Green,
+    Blue,
+    Yellow,
+    Cyan,
+    Magenta,
+    White,
+};
+
 void init_led();
 void handle_led();
 void set_led_mode(LedMode mode);
 void set_led_net(LedNet net);
-void set_led_gate(uint8_t idx, bool state);
+void set_led_gate(uint8_t idx, LedGateColor color);

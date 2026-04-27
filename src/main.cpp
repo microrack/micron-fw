@@ -27,10 +27,10 @@ constexpr uint32_t BLINK_ON_MS = 100;
 constexpr uint32_t BLINK_CYCLE_MS = 500;  // 100 ms on + 400 ms off
 }  // namespace
 
-void set_gate(uint8_t idx, bool state) {
-    set_led_gate(idx, state);
+void set_gate(uint8_t idx, LedGateColor color) {
+    set_led_gate(idx, color);
     if (idx < GATE_DAC_CHANNEL_COUNT) {
-        // mcp4728_write_channel(idx, state ? DAC_FULL : 0);
+        // mcp4728_write_channel(idx, color != LedGateColor::Off ? DAC_FULL : 0);
     }
 }
 

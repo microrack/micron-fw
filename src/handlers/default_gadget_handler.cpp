@@ -23,9 +23,12 @@ constexpr uint8_t kGateCount = 5;  // indices 0..3 MIDI + gate 4 (LED)
 void update_led_gates_from_channel_counts() {
     for (uint8_t ch = GATE_CHANNEL_FIRST; ch <= GATE_CHANNEL_LAST; ++ch) {
         const uint8_t idx = static_cast<uint8_t>(ch - GATE_CHANNEL_FIRST);
-        set_gate(idx, g_pressed_notes_per_channel[idx] > 0);
+        set_gate(
+            idx,
+            g_pressed_notes_per_channel[idx] > 0 ? LedGateColor::White : LedGateColor::Off
+        );
     }
-    set_gate(4, false);
+    set_gate(4, LedGateColor::Off);
 }
 
 static void turn_all_gates_off() {
@@ -33,7 +36,7 @@ static void turn_all_gates_off() {
         g_pressed_notes_per_channel[i] = 0;
     }
     for (uint8_t i = 0; i < kGateCount; ++i) {
-        set_gate(i, false);
+        set_gate(i, LedGateColor::Off);
     }
 }
 
