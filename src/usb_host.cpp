@@ -555,6 +555,6 @@ void usb_host_init(const UsbHostConfig& config) {
     }
     logger_printf("Starting USB Host example...");
 
-    xTaskCreatePinnedToCore(usb_daemon_task, "usb_daemon", 4096, nullptr, 20, nullptr, kAppTaskCore);
-    xTaskCreatePinnedToCore(usb_client_task, "usb_client", 4096, &g_host, 20, nullptr, kAppTaskCore);
+    xTaskCreatePinnedToCore(usb_daemon_task, "usb_daemon", 4096, nullptr, 20, nullptr, APP_TASK_CORE);
+    xTaskCreatePinnedToCore(usb_client_task, "usb_client", 4096, &g_host, 20, nullptr, APP_TASK_CORE);
 }

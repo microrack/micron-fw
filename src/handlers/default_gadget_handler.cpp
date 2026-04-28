@@ -19,7 +19,10 @@ static bool channel_maps_to_gate(uint8_t midi_channel_1_to_16, uint8_t* out_gate
     return true;
 }
 
-constexpr uint8_t kGateCount = 5;  // indices 0..3 MIDI + gate 4 (LED)
+constexpr uint8_t GATE_COUNT = 5;  // indices 0..3 MIDI + gate 4 (LED)
+constexpr float PRESS_VOLTAGE_STEPS[] = {0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f};
+constexpr uint8_t CV_CHANNEL_COUNT = GATE_CHANNEL_LAST - GATE_CHANNEL_FIRST + 1;
+static uint8_t g_press_voltage_step_idx = 0;
 
 void update_led_gates_from_channel_counts() {
     for (uint8_t ch = GATE_CHANNEL_FIRST; ch <= GATE_CHANNEL_LAST; ++ch) {
@@ -36,7 +39,7 @@ static void turn_all_gates_off() {
     for (uint8_t i = 0; i < (GATE_CHANNEL_LAST - GATE_CHANNEL_FIRST + 1); ++i) {
         g_pressed_notes_per_channel[i] = 0;
     }
-    for (uint8_t i = 0; i < kGateCount; ++i) {
+    for (uint8_t i = 0; i < GATE_COUNT; ++i) {
         set_led_gate(i, LedGateColor::Off);
         set_gate(i, false);
     }
@@ -112,6 +115,28 @@ class DefaultGadgetHandler : public GadgetHandler {
         log_midi_event(event);
     }
 
+    void press() override {
+        const float voltage = PRESS_VOLTAGE_STEPS[g_press_voltage_step_idx];
+        logger_printf(
+            "DefaultGadgetHandler: button press, set all CV channels to %.1fV",
+            static_cast<double>(voltage)
+        );
+
+        for (uint8_t i = 0; i < CV_CHANNEL_COUNT; ++i) {
+            const bool ok = set_cv(i, voltage);
+            logger_printf(
+                "DefaultGadgetHandler: CV ch=%u voltage=%.1fV result=%s",
+                static_cast<unsigned>(i),
+                static_cast<double>(voltage),
+                ok ? "ok" : "fail"
+            );
+        }
+
+        g_press_voltage_step_idx =
+            static_cast<uint8_t>((g_press_voltage_step_idx + 1) %
+                                 (sizeof(PRESS_VOLTAGE_STEPS) / sizeof(PRESS_VOLTAGE_STEPS[0])));
+    }
+
     void tick(float dt_sec, uint32_t now_ms) override {
         (void)dt_sec;
         (void)now_ms;
@@ -122,6 +147,9 @@ class DefaultGadgetHandler : public GadgetHandler {
     void exit() override {
         logger_printf("DefaultGadgetHandler: exit");
         turn_all_gates_off();
+        for (uint8_t i = 0; i < CV_CHANNEL_COUNT; ++i) {
+            (void)set_cv(i, 0.0f);
+        }
     }
 };
 

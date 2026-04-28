@@ -10,13 +10,13 @@ extern "C" {
 #include <string.h>
 
 namespace {
-constexpr size_t kLogCapacity = 64;
-constexpr size_t kLogMessageLen = 160;
+constexpr size_t LOG_CAPACITY = 64;
+constexpr size_t LOG_MESSAGE_LEN = 160;
 
 void (*g_output_notify)(void) = nullptr;
 
 SemaphoreHandle_t g_log_mutex = nullptr;
-char g_log_ring[kLogCapacity][kLogMessageLen] = {};
+char g_log_ring[LOG_CAPACITY][LOG_MESSAGE_LEN] = {};
 size_t g_log_head = 0;
 size_t g_log_tail = 0;
 size_t g_log_count = 0;
@@ -48,20 +48,20 @@ void logger_printf(const char* fmt, ...) {
         return;
     }
 
-    char formatted[kLogMessageLen];
+    char formatted[LOG_MESSAGE_LEN];
     va_list args;
     va_start(args, fmt);
     vsnprintf(formatted, sizeof(formatted), fmt, args);
     va_end(args);
 
-    if (g_log_count == kLogCapacity) {
-        g_log_tail = (g_log_tail + 1) % kLogCapacity;
+    if (g_log_count == LOG_CAPACITY) {
+        g_log_tail = (g_log_tail + 1) % LOG_CAPACITY;
         --g_log_count;
     }
 
-    strncpy(g_log_ring[g_log_head], formatted, kLogMessageLen - 1);
-    g_log_ring[g_log_head][kLogMessageLen - 1] = '\0';
-    g_log_head = (g_log_head + 1) % kLogCapacity;
+    strncpy(g_log_ring[g_log_head], formatted, LOG_MESSAGE_LEN - 1);
+    g_log_ring[g_log_head][LOG_MESSAGE_LEN - 1] = '\0';
+    g_log_head = (g_log_head + 1) % LOG_CAPACITY;
     ++g_log_count;
 
     unlock_logs();
@@ -85,7 +85,7 @@ bool logger_get_next(char* out_message, size_t out_message_size) {
 
     strncpy(out_message, g_log_ring[g_log_tail], out_message_size - 1);
     out_message[out_message_size - 1] = '\0';
-    g_log_tail = (g_log_tail + 1) % kLogCapacity;
+    g_log_tail = (g_log_tail + 1) % LOG_CAPACITY;
     --g_log_count;
 
     unlock_logs();

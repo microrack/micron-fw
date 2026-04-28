@@ -5,8 +5,8 @@
 #include <string.h>
 
 namespace {
-constexpr const char* kConfigPath = "/config.txt";
-constexpr const char* kDefaultConfigContent = "usb=0\nwifi=0\nssid=\npassword=\n";
+constexpr const char* CONFIG_PATH = "/config.txt";
+constexpr const char* DEFAULT_CONFIG_CONTENT = "usb=0\nwifi=0\nssid=\npassword=\n";
 
 AppConfig g_config = {
     .usb = false,
@@ -81,21 +81,21 @@ void parse_line(const String& raw_line) {
 }
 
 bool ensure_default_config_file() {
-    if (LittleFS.exists(kConfigPath)) {
+    if (LittleFS.exists(CONFIG_PATH)) {
         return true;
     }
 
-    File file = LittleFS.open(kConfigPath, "w");
+    File file = LittleFS.open(CONFIG_PATH, "w");
     if (!file) {
         return false;
     }
-    file.print(kDefaultConfigContent);
+    file.print(DEFAULT_CONFIG_CONTENT);
     file.close();
     return true;
 }
 
 void load_config_file() {
-    File file = LittleFS.open(kConfigPath, "r");
+    File file = LittleFS.open(CONFIG_PATH, "r");
     if (!file) {
         return;
     }

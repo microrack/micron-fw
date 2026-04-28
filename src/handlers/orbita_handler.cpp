@@ -9,8 +9,8 @@
 
 namespace {
 
-static constexpr const char* kManufacturer = "PLAYTRONICA";
-static constexpr const char* kProduct      = "ORBITA DIY DANDELION";
+static constexpr const char* MANUFACTURER = "PLAYTRONICA";
+static constexpr const char* PRODUCT      = "ORBITA DIY DANDELION";
 
 // Compare s against expected, ignoring trailing ASCII spaces in s.
 static bool match_trimmed(const char* s, const char* expected) {
@@ -27,35 +27,35 @@ static bool match_trimmed(const char* s, const char* expected) {
 
 // Orbita track root MIDI note per channel (1..4). (note - root) = ступень мажора от тоники.
 static uint8_t orbita_channel_offset(uint8_t channel_1_to_16) {
-    static constexpr uint8_t kOffsets[] = {36, 43, 50, 56};
+    static constexpr uint8_t OFFSETS[] = {36, 43, 50, 56};
     if (channel_1_to_16 >= 1 && channel_1_to_16 <= 4) {
-        return kOffsets[channel_1_to_16 - 1];
+        return OFFSETS[channel_1_to_16 - 1];
     }
     return 0;
 }
 
-static constexpr uint8_t kMidiGateChFirst = 1;
-static constexpr uint8_t kMidiGateChLast  = 4;
+static constexpr uint8_t MIDI_GATE_CH_FIRST = 1;
+static constexpr uint8_t MIDI_GATE_CH_LAST  = 4;
 
 static bool midi_channel_to_gate_idx(uint8_t midi_ch_1_to_16, uint8_t* out_gate_idx) {
-    if (midi_ch_1_to_16 < kMidiGateChFirst || midi_ch_1_to_16 > kMidiGateChLast) {
+    if (midi_ch_1_to_16 < MIDI_GATE_CH_FIRST || midi_ch_1_to_16 > MIDI_GATE_CH_LAST) {
         return false;
     }
-    *out_gate_idx = static_cast<uint8_t>(midi_ch_1_to_16 - kMidiGateChFirst);
+    *out_gate_idx = static_cast<uint8_t>(midi_ch_1_to_16 - MIDI_GATE_CH_FIRST);
     return true;
 }
 
-static uint8_t g_held_notes_per_channel[kMidiGateChLast - kMidiGateChFirst + 1] = {};
+static uint8_t g_held_notes_per_channel[MIDI_GATE_CH_LAST - MIDI_GATE_CH_FIRST + 1] = {};
 
 // rel_note = ступени мажорного лада от тоники (0=I, 1=II, …), не полутоны.
 static int major_scale_steps_to_semitones(int steps) {
     if (steps < 0) {
         return 0;
     }
-    static constexpr uint8_t kMajorSemitonesFromTonic[7] = {0, 2, 4, 5, 7, 9, 11};
+    static constexpr uint8_t MAJOR_SEMITONES_FROM_TONIC[7] = {0, 2, 4, 5, 7, 9, 11};
     const int oct = steps / 7;
     const int rem = steps % 7;
-    return oct * 12 + kMajorSemitonesFromTonic[rem];
+    return oct * 12 + MAJOR_SEMITONES_FROM_TONIC[rem];
 }
 
 static float rel_major_steps_to_volts(int rel_note_degrees) {
@@ -64,8 +64,8 @@ static float rel_major_steps_to_volts(int rel_note_degrees) {
 }
 
 static void orbita_sync_gates_leds() {
-    for (uint8_t ch = kMidiGateChFirst; ch <= kMidiGateChLast; ++ch) {
-        const uint8_t idx = static_cast<uint8_t>(ch - kMidiGateChFirst);
+    for (uint8_t ch = MIDI_GATE_CH_FIRST; ch <= MIDI_GATE_CH_LAST; ++ch) {
+        const uint8_t idx = static_cast<uint8_t>(ch - MIDI_GATE_CH_FIRST);
         const bool on = g_held_notes_per_channel[idx] > 0;
         set_gate(idx, on);
         set_led_gate(idx, on ? LedGateColor::Red : LedGateColor::Off);
@@ -75,7 +75,7 @@ static void orbita_sync_gates_leds() {
 }
 
 static void orbita_reset_outputs() {
-    for (uint8_t i = 0; i < (kMidiGateChLast - kMidiGateChFirst + 1); ++i) {
+    for (uint8_t i = 0; i < (MIDI_GATE_CH_LAST - MIDI_GATE_CH_FIRST + 1); ++i) {
         g_held_notes_per_channel[i] = 0;
         set_cv(i, 0.0f);
         set_gate(i, false);
@@ -88,8 +88,8 @@ static void orbita_reset_outputs() {
 class OrbitaHandler : public GadgetHandler {
    public:
     bool probe(const UsbDeviceContext& context) override {
-        return match_trimmed(context.manufacturer_name, kManufacturer) &&
-               match_trimmed(context.product_name, kProduct);
+        return match_trimmed(context.manufacturer_name, MANUFACTURER) &&
+               match_trimmed(context.product_name, PRODUCT);
     }
 
     void midi(const MidiEvent& event) override {
@@ -145,6 +145,8 @@ class OrbitaHandler : public GadgetHandler {
             orbita_sync_gates_leds();
         }
     }
+
+    void press() override {}
 
     void tick(float dt_sec, uint32_t now_ms) override {
         (void)dt_sec;

@@ -1,6 +1,7 @@
 #include <Arduino.h>
 
 #include "board.h"
+#include "button.h"
 #include "config.h"
 #include "handlers/default_gadget_handler.h"
 #include "handlers/orbita_handler.h"
@@ -24,7 +25,7 @@ static void check_boot_mode_pin() {
     handle_led();
     delay(1000);
 
-    if (digitalRead(TOUCH_PIN) == 1) {
+    if (button_read_raw()) {
         set_led_mode(LedMode::Boot);
         while (1) {
             handle_led();
@@ -32,7 +33,7 @@ static void check_boot_mode_pin() {
     }
 }
 void setup() {
-    pinMode(TOUCH_PIN, INPUT);
+    button_init();
     init_cv_gate();
     init_led();
     logger_init();
@@ -71,12 +72,13 @@ void loop() {
     LOOP_PROFILE(LoopProfileSlot::MidiPoll, midi_input_poll());
     LOOP_PROFILE(LoopProfileSlot::Tick, gadget_handler_get().tick(dt_sec, now_ms));
 
-    static int prev_touch_state = 0;
-    const int touch_state = digitalRead(TOUCH_PIN);
-    const bool pressed_edge = (prev_touch_state == 0) && (touch_state == 1);
-    prev_touch_state = touch_state;
+    const ButtonEvent button_event = button_handle();
 
-    if (pressed_edge && g_app_config.wifi) {
+    if (button_event == ButtonEvent::Pressed) {
+        gadget_handler_get().press();
+    }
+
+    if (button_event == ButtonEvent::Hold && g_app_config.wifi) {
         const NetState state = net_get_state();
         if (state == NetState::Ap) {
             net_start_client();

@@ -22,6 +22,10 @@ void init_mcp4728() {
     Wire.begin(MCP4728_SDA, MCP4728_SCL);
     Wire.setClock(MCP4728_SCL_HZ);
 
+    Wire.beginTransmission(MCP4728_I2C_ADDR);
+    Wire.write(0b10000000); // C2 C1 C0 = 100, X=0, VREF A-D = 0
+    Wire.endTransmission();
+
     const uint16_t zeros[4] = {0, 0, 0, 0};
     (void)mcp4728_write_all(4, zeros);
 }

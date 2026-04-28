@@ -117,6 +117,7 @@ class GadgetHandler {
 
     virtual bool probe(const UsbDeviceContext& context) = 0;
     virtual void midi(const MidiEvent& event) = 0;
+    virtual void press() = 0;
     virtual void tick(float dt_sec, uint32_t now_ms) = 0;
 
     /// Called from the main loop once the USB gadget path is ready (MIDI stream up).

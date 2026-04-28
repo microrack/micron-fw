@@ -9,15 +9,15 @@
 #include "logger.h"
 #include "soc/soc_caps.h"
 
-static constexpr uint32_t kReportPeriodMs = 5000;
+static constexpr uint32_t REPORT_PERIOD_MS = 5000;
 
 #if SOC_CPU_CORES_NUM >= 2
-static constexpr uint8_t kCpuCores = 2;
+static constexpr uint8_t CPU_CORES = 2;
 #else
-static constexpr uint8_t kCpuCores = 1;
+static constexpr uint8_t CPU_CORES = 1;
 #endif
 
-static std::atomic<uint32_t> g_cpu_idle_hook_ticks[kCpuCores];
+static std::atomic<uint32_t> g_cpu_idle_hook_ticks[CPU_CORES];
 
 static bool cpu_idle_hook_core0(void) {
     g_cpu_idle_hook_ticks[0].fetch_add(1, std::memory_order_relaxed);
@@ -129,8 +129,8 @@ void profiling_tick() {
     static uint32_t hz_samples = 0;
     static bool skip_next_loop_hz_sample = false;
 
-    static uint32_t prev_idle_ticks[kCpuCores] = {};
-    static uint32_t peak_idle_delta[kCpuCores] = {};
+    static uint32_t prev_idle_ticks[CPU_CORES] = {};
+    static uint32_t peak_idle_delta[CPU_CORES] = {};
 
     const uint32_t now_us = micros();
     const uint32_t now_ms = millis();
@@ -160,7 +160,7 @@ void profiling_tick() {
         last_report_ms = now_ms;
     }
 
-    if (static_cast<uint32_t>(now_ms - last_report_ms) < kReportPeriodMs) {
+    if (static_cast<uint32_t>(now_ms - last_report_ms) < REPORT_PERIOD_MS) {
         return;
     }
 
@@ -179,7 +179,7 @@ void profiling_tick() {
         logger_printf("loop Hz: no samples");
     }
 
-    for (uint8_t c = 0; c < kCpuCores; ++c) {
+    for (uint8_t c = 0; c < CPU_CORES; ++c) {
         const uint32_t idle_now = g_cpu_idle_hook_ticks[c].load(std::memory_order_relaxed);
         const uint32_t delta = idle_now - prev_idle_ticks[c];
         prev_idle_ticks[c] = idle_now;
@@ -200,7 +200,7 @@ void profiling_tick() {
             "CPU core%u load ~%.0f%% (idle ticks/%ums=%lu peak=%lu)",
             static_cast<unsigned>(c),
             static_cast<double>(load_pct),
-            static_cast<unsigned>(kReportPeriodMs),
+            static_cast<unsigned>(REPORT_PERIOD_MS),
             static_cast<unsigned long>(delta),
             static_cast<unsigned long>(peak_idle_delta[c])
         );

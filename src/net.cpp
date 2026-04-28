@@ -12,18 +12,18 @@ extern "C" {
 #include "freertos/task.h"
 }
 
-static constexpr const char* kApSsid = "PLTRNK";
-static constexpr uint16_t kServerPort = 2323;
-static constexpr size_t kMaxClients = 4;
-static constexpr size_t kMaxMessageLen = 160;
-static constexpr uint32_t kClientConnectTimeoutMs = 10000;
+static constexpr const char* AP_SSID = "PLTRNK";
+static constexpr uint16_t SERVER_PORT = 2323;
+static constexpr size_t MAX_CLIENTS = 4;
+static constexpr size_t MAX_MESSAGE_LEN = 160;
+static constexpr uint32_t CLIENT_CONNECT_TIMEOUT_MS = 10000;
 
-static constexpr UBaseType_t kLogSendTaskPriority = 5;
-static constexpr uint32_t kLogSendTaskStackWords = 4096;
-static constexpr TickType_t kLogSendWaitTicks = pdMS_TO_TICKS(500);
+static constexpr UBaseType_t LOG_SEND_TASK_PRIORITY = 5;
+static constexpr uint32_t LOG_SEND_TASK_STACK_WORDS = 4096;
+static constexpr TickType_t LOG_SEND_WAIT_TICKS = pdMS_TO_TICKS(500);
 
-static WiFiServer g_server(kServerPort);
-static WiFiClient g_clients[kMaxClients];
+static WiFiServer g_server(SERVER_PORT);
+static WiFiClient g_clients[MAX_CLIENTS];
 static bool g_net_enabled = false;
 static bool g_server_started = false;
 static NetState g_net_state = NetState::Ap;
@@ -36,7 +36,7 @@ static SemaphoreHandle_t g_log_send_wakeup = nullptr;
 static TaskHandle_t g_log_send_task = nullptr;
 
 static void broadcast_one_message_locked(const char* message) {
-    for (size_t i = 0; i < kMaxClients; ++i) {
+    for (size_t i = 0; i < MAX_CLIENTS; ++i) {
         if (g_clients[i] && g_clients[i].connected()) {
             g_clients[i].print(message);
             g_clients[i].print('\n');
@@ -46,7 +46,7 @@ static void broadcast_one_message_locked(const char* message) {
 
 static bool prune_clients_and_has_any_locked() {
     bool has_any = false;
-    for (size_t i = 0; i < kMaxClients; ++i) {
+    for (size_t i = 0; i < MAX_CLIENTS; ++i) {
         if (!g_clients[i]) {
             continue;
         }
@@ -65,7 +65,7 @@ static void stop_server_and_clients_locked() {
         g_server_started = false;
     }
 
-    for (size_t i = 0; i < kMaxClients; ++i) {
+    for (size_t i = 0; i < MAX_CLIENTS; ++i) {
         if (g_clients[i]) {
             g_clients[i].stop();
         }
@@ -104,7 +104,7 @@ static void accept_new_clients() {
     }
 
     bool accepted = false;
-    for (size_t i = 0; i < kMaxClients; ++i) {
+    for (size_t i = 0; i < MAX_CLIENTS; ++i) {
         if (!g_clients[i] || !g_clients[i].connected()) {
             if (g_clients[i]) {
                 g_clients[i].stop();
@@ -128,13 +128,13 @@ static void accept_new_clients() {
 
 static void log_tcp_send_task(void* arg) {
     (void)arg;
-    char log_message[kMaxMessageLen];
+    char log_message[MAX_MESSAGE_LEN];
 
     for (;;) {
         if (g_log_send_wakeup != nullptr) {
-            xSemaphoreTake(g_log_send_wakeup, kLogSendWaitTicks);
+            xSemaphoreTake(g_log_send_wakeup, LOG_SEND_WAIT_TICKS);
         } else {
-            vTaskDelay(kLogSendWaitTicks);
+            vTaskDelay(LOG_SEND_WAIT_TICKS);
         }
 
         if (!g_net_enabled) {
@@ -188,11 +188,11 @@ static void ensure_log_forwarder_started() {
     xTaskCreatePinnedToCore(
         log_tcp_send_task,
         "log_tcp",
-        kLogSendTaskStackWords,
+        LOG_SEND_TASK_STACK_WORDS,
         nullptr,
-        kLogSendTaskPriority,
+        LOG_SEND_TASK_PRIORITY,
         &g_log_send_task,
-        kAppTaskCore
+        APP_TASK_CORE
     );
 }
 
@@ -232,7 +232,7 @@ void net_start_ap() {
 
     stop_server_and_clients();
     WiFi.mode(WIFI_AP);
-    WiFi.softAP(kApSsid);
+    WiFi.softAP(AP_SSID);
     start_server_if_needed();
     g_net_state = NetState::Ap;
 }
@@ -269,7 +269,7 @@ void handle_net() {
             start_server_if_needed();
             g_net_state = NetState::Client;
             logger_printf("WiFi connected, IP: %s", WiFi.localIP().toString().c_str());
-        } else if (millis() - g_connect_started_ms >= kClientConnectTimeoutMs) {
+        } else if (millis() - g_connect_started_ms >= CLIENT_CONNECT_TIMEOUT_MS) {
             net_start_ap();
         }
     }

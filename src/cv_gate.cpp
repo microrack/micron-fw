@@ -5,10 +5,10 @@
 
 namespace {
 
-constexpr uint8_t kCvChannelCount = 4;
-constexpr float   kCvVrefV        = 5.0f;
+constexpr uint8_t CV_CHANNEL_COUNT = 4;
+constexpr float   CV_VREF_V        = 5.0f;
 
-static uint16_t g_cv_codes[kCvChannelCount] = {};
+static uint16_t g_cv_codes[CV_CHANNEL_COUNT] = {};
 
 }  // namespace
 
@@ -27,21 +27,21 @@ void set_gate(uint8_t idx, bool on) {
 }
 
 bool set_cv(uint8_t channel, float volts) {
-    if (channel >= kCvChannelCount) {
+    if (channel >= CV_CHANNEL_COUNT) {
         return false;
     }
     if (volts < 0.0f) {
         volts = 0.0f;
     }
-    if (volts > kCvVrefV) {
-        volts = kCvVrefV;
+    if (volts > CV_VREF_V) {
+        volts = CV_VREF_V;
     }
     // MCP4728: VOUT = VREF * code / 4096, code in 0..4095
-    const float scaled = volts * (4096.0f / kCvVrefV);
+    const float scaled = volts * (4096.0f / CV_VREF_V);
     auto code = static_cast<uint32_t>(scaled + 0.5f);
     if (code > 4095U) {
         code = 4095U;
     }
     g_cv_codes[channel] = static_cast<uint16_t>(code & 0x0FFFU);
-    return mcp4728_write_all(kCvChannelCount, g_cv_codes);
+    return mcp4728_write_all(CV_CHANNEL_COUNT, g_cv_codes);
 }
