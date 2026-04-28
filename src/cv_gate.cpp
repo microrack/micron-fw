@@ -1,23 +1,35 @@
 #include "cv_gate.h"
 
+#include "board.h"
 #include "mcp4728.h"
 
 namespace {
 
-constexpr uint8_t kGateDacChannelCount = 4;
-constexpr float   kCvVrefV           = 5.0f;
+constexpr uint8_t kCvChannelCount = 4;
+constexpr float   kCvVrefV        = 5.0f;
+
+static uint16_t g_cv_codes[kCvChannelCount] = {};
 
 }  // namespace
 
-void set_gate(uint8_t idx, LedGateColor color) {
-    set_led_gate(idx, color);
-    if (idx < kGateDacChannelCount) {
-        const float v = (color != LedGateColor::Off) ? kCvVrefV : 0.0f;
-        (void)set_cv(idx, v);
+void init_cv_gate() {
+    init_mcp4728();
+    for (uint8_t i = 0; i < GATE_OUT_PIN_COUNT; ++i) {
+        pinMode(GATE_OUT_PINS[i], OUTPUT);
+        digitalWrite(GATE_OUT_PINS[i], HIGH);  // off: active-low gates idle high
+    }
+}
+
+void set_gate(uint8_t idx, bool on) {
+    if (idx < GATE_OUT_PIN_COUNT) {
+        digitalWrite(GATE_OUT_PINS[idx], on ? LOW : HIGH);
     }
 }
 
 bool set_cv(uint8_t channel, float volts) {
+    if (channel >= kCvChannelCount) {
+        return false;
+    }
     if (volts < 0.0f) {
         volts = 0.0f;
     }
@@ -30,5 +42,6 @@ bool set_cv(uint8_t channel, float volts) {
     if (code > 4095U) {
         code = 4095U;
     }
-    return mcp4728_write_channel(channel, static_cast<uint16_t>(code));
+    g_cv_codes[channel] = static_cast<uint16_t>(code & 0x0FFFU);
+    return mcp4728_write_all(kCvChannelCount, g_cv_codes);
 }

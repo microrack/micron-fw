@@ -7,4 +7,8 @@
 static constexpr uint8_t BOARD_LED_PIN = 18;
 static constexpr uint16_t BOARD_LED_COUNT = 9;
 static constexpr uint8_t TOUCH_PIN = 14;
-static constexpr uint8_t BLINK_PIN = 33;
+
+/** Digital gate outputs (active low). Indices 0..GATE_OUT_PIN_COUNT-1. */
+static constexpr uint8_t GATE_OUT_PINS[] = {33, 34, 35, 36, 37};
+static constexpr uint8_t GATE_OUT_PIN_COUNT =
+    static_cast<uint8_t>(sizeof(GATE_OUT_PINS) / sizeof(GATE_OUT_PINS[0]));

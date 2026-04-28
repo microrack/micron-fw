@@ -9,7 +9,6 @@
 #include "led.h"
 #include "logger.h"
 #include "midi.h"
-#include "mcp4728.h"
 #include "net.h"
 #include "ota.h"
 #include "profiling.h"
@@ -19,11 +18,6 @@ static AppConfig g_app_config = {
     .usb = false,
     .wifi = false,
 };
-
-namespace {
-constexpr uint32_t BLINK_ON_MS = 100;
-constexpr uint32_t BLINK_CYCLE_MS = 500;  // 100 ms on + 400 ms off
-}  // namespace
 
 static void check_boot_mode_pin() {
     set_led_mode(LedMode::PreBoot);
@@ -39,8 +33,7 @@ static void check_boot_mode_pin() {
 }
 void setup() {
     pinMode(TOUCH_PIN, INPUT);
-    pinMode(BLINK_PIN, OUTPUT);
-    init_mcp4728();
+    init_cv_gate();
     init_led();
     logger_init();
     profiling_init();
@@ -77,9 +70,6 @@ void loop() {
     prev_tick_ms = now_ms;
     LOOP_PROFILE(LoopProfileSlot::MidiPoll, midi_input_poll());
     LOOP_PROFILE(LoopProfileSlot::Tick, gadget_handler_get().tick(dt_sec, now_ms));
-
-    const uint32_t blink_phase = millis() % BLINK_CYCLE_MS;
-    digitalWrite(BLINK_PIN, blink_phase < BLINK_ON_MS ? HIGH : LOW);
 
     static int prev_touch_state = 0;
     const int touch_state = digitalRead(TOUCH_PIN);
