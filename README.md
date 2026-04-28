@@ -1,77 +1,77 @@
 # micron-fw
 
-Инструкция по прошивке устройства и использованию вспомогательных скриптов.
+Instructions for flashing the device and using helper scripts.
 
-## Что нужно установить
+## Requirements
 
 - [PlatformIO Core](https://docs.platformio.org/en/latest/core/installation/index.html) (`pio`)
-- `ping` (обычно уже есть в системе)
-- `nc` / `netcat` для чтения логов по TCP
+- `ping` (usually already available in the system)
+- `nc` / `netcat` for reading logs over TCP
 
-Проверка:
+Check:
 
 ```bash
 pio --version
 nc -h
 ```
 
-## Конфигурации PlatformIO
+## PlatformIO Configurations
 
-В `platformio.ini` настроены окружения:
+The following environments are configured in `platformio.ini`:
 
-- `usb` — прошивка по USB
-- `ota` — прошивка по OTA (`upload_protocol = espota`)
+- `usb` - flash over USB
+- `ota` - flash over OTA (`upload_protocol = espota`)
 
-## Прошивка по USB
+## Flashing Over USB
 
-1. Подключи устройство по USB.
-2. Проверь, что PlatformIO видит порт:
+1. Connect the device over USB.
+2. Verify that PlatformIO can see the port:
 
 ```bash
 pio device list
 ```
 
-3. Залей прошивку:
+3. Upload the firmware:
 
 ```bash
 pio run -e usb -t upload
 ```
 
-## Прошивка по OTA
+## Flashing Over OTA
 
-Если устройство доступно по сети (IP известен), можно прошить без USB:
+If the device is reachable on the network (known IP), you can flash without USB:
 
 ```bash
-pio run -e ota -t upload --upload-port <ip-адрес>
+pio run -e ota -t upload --upload-port <ip-address>
 ```
 
-Пример:
+Example:
 
 ```bash
 pio run -e ota -t upload --upload-port 192.168.1.42
 ```
 
-## Скрипты
+## Scripts
 
 ### `start_log.sh`
 
-Подключается к устройству по TCP (через `nc`) и показывает лог.
+Connects to the device over TCP (via `nc`) and shows logs.
 
-Использование:
+Usage:
 
 ```bash
 ./start_log.sh <ip-or-hostname> [port]
 ```
 
-- `<ip-or-hostname>` — адрес устройства
-- `[port]` — порт логов (по умолчанию `2323`)
+- `<ip-or-hostname>` - device address
+- `[port]` - log port (default: `2323`)
 
-Что делает скрипт:
+What the script does:
 
-1. Ждёт, пока устройство начнёт отвечать на `ping`
-2. После этого подключается к порту логов через `nc`
+1. Waits until the device starts replying to `ping`
+2. Then connects to the log port via `nc`
 
-Примеры:
+Examples:
 
 ```bash
 ./start_log.sh 192.168.1.42
@@ -80,51 +80,51 @@ pio run -e ota -t upload --upload-port 192.168.1.42
 
 ### `upload_ota_and_log.sh`
 
-Прошивает устройство по OTA и сразу открывает лог.
+Flashes the device over OTA and immediately opens logs.
 
-Использование:
+Usage:
 
 ```bash
 ./upload_ota_and_log.sh <ip-address>
 ```
 
-Что делает скрипт:
+What the script does:
 
-1. Запускает OTA-прошивку:
+1. Starts OTA flashing:
    `pio run -e ota -t upload --upload-port "<ip-address>"`
-2. Если прошивка успешна, запускает:
+2. If flashing succeeds, runs:
    `./start_log.sh "<ip-address>"`
 
-Пример:
+Example:
 
 ```bash
 ./upload_ota_and_log.sh 192.168.1.42
 ```
 
-## Быстрый сценарий
+## Quick Workflow
 
-Обычный цикл разработки по Wi-Fi:
+Typical Wi-Fi development loop:
 
 ```bash
 ./upload_ota_and_log.sh 192.168.1.42
 ```
 
-Если OTA недоступна, прошей по USB:
+If OTA is unavailable, flash over USB:
 
 ```bash
 pio run -e usb -t upload
 ```
 
-## Типичные проблемы
+## Common Issues
 
 - `pio: command not found`  
-  PlatformIO не установлен или не добавлен в `PATH`.
+  PlatformIO is not installed or not added to `PATH`.
 
 - `nc: command not found`  
-  Установи netcat (`nc`).
+  Install netcat (`nc`).
 
-- OTA не проходит  
-  Проверь, что устройство и компьютер в одной сети и IP указан верно.
+- OTA upload fails  
+  Check that the device and computer are on the same network and the IP is correct.
 
-- Лог не открывается на `2323`  
-  Уточни порт и передай его вторым аргументом в `start_log.sh`.
+- Log does not open on `2323`  
+  Verify the port and pass it as the second argument to `start_log.sh`.

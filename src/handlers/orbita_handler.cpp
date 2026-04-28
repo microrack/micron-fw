@@ -25,7 +25,7 @@ static bool match_trimmed(const char* s, const char* expected) {
     return strncmp(s, expected, trimmed) == 0 && expected[trimmed] == '\0';
 }
 
-// Orbita track root MIDI note per channel (1..4). (note - root) = ступень мажора от тоники.
+// Orbita track root MIDI note per channel (1..4). (note - root) = major scale degree from tonic.
 static uint8_t orbita_channel_offset(uint8_t channel_1_to_16) {
     static constexpr uint8_t OFFSETS[] = {36, 43, 50, 56};
     if (channel_1_to_16 >= 1 && channel_1_to_16 <= 4) {
@@ -47,7 +47,7 @@ static bool midi_channel_to_gate_idx(uint8_t midi_ch_1_to_16, uint8_t* out_gate_
 
 static uint8_t g_held_notes_per_channel[MIDI_GATE_CH_LAST - MIDI_GATE_CH_FIRST + 1] = {};
 
-// rel_note = ступени мажорного лада от тоники (0=I, 1=II, …), не полутоны.
+// rel_note = major scale degrees from tonic (0=I, 1=II, ...), not semitones.
 static int major_scale_steps_to_semitones(int steps) {
     if (steps < 0) {
         return 0;
