@@ -18,12 +18,18 @@ void init_cv_gate() {
         pinMode(GATE_OUT_PINS[i], OUTPUT);
         digitalWrite(GATE_OUT_PINS[i], HIGH);  // off: active-low gates idle high
     }
+    pinMode(CLOCK_OUT_PIN, OUTPUT);
+    digitalWrite(CLOCK_OUT_PIN, HIGH);  // off: active-low clock idle high
 }
 
 void set_gate(uint8_t idx, bool on) {
     if (idx < GATE_OUT_PIN_COUNT) {
         digitalWrite(GATE_OUT_PINS[idx], on ? LOW : HIGH);
     }
+}
+
+void set_clock(bool on) {
+    digitalWrite(CLOCK_OUT_PIN, on ? LOW : HIGH);
 }
 
 bool set_cv(uint8_t channel, float volts) {

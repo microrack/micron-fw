@@ -16,7 +16,7 @@ class Button {
 
    private:
     static constexpr uint32_t DEBOUNCE_MS = 30;
-    static constexpr uint32_t HOLD_MS = 700;
+    static constexpr uint32_t HOLD_MS = 1500;
 
     bool last_raw_ = false;
     bool stable_state_ = false;

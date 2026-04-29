@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include <FastLED.h>
 
 enum class LedMode : uint8_t {
     Boot = 0,
@@ -14,19 +15,9 @@ enum class LedNet : uint8_t {
     Connected = 2,
 };
 
-enum class LedGateColor : uint8_t {
-    Off = 0,
-    Red,
-    Green,
-    Blue,
-    Yellow,
-    Cyan,
-    Magenta,
-    White,
-};
-
 void init_led();
 void handle_led();
 void set_led_mode(LedMode mode);
 void set_led_net(LedNet net);
-void set_led_gate(uint8_t idx, LedGateColor color);
+void set_led_gate(uint8_t idx, CRGB color);
+void set_led_clock(CRGB color);

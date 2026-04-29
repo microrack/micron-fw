@@ -9,7 +9,8 @@ static constexpr uint16_t STEP_MS = 50;
 static constexpr uint16_t CONNECTING_BLINK_MS = 150;
 static constexpr uint32_t NET_AP_CONNECTED_SPLASH_MS = 1000;
 static constexpr uint32_t SHOW_MIN_INTERVAL_US = 10000;
-static constexpr uint8_t GATE_COUNT = 5;
+static constexpr uint8_t GATE_COUNT = 4;
+static constexpr uint8_t CLOCK_INDEX = 4;
 // Only LEDs 4..8 are driven; 0..3 stay off. In Normal mode, net uses LED 4 only
 // while showing net status; gate view uses the usual map (incl. LED 4 for gate 4).
 static constexpr uint8_t LED_ACTIVE_FIRST = 4;
@@ -19,7 +20,8 @@ static constexpr uint8_t LED_NET_INDICATOR = 4;
 static CRGB leds[BOARD_LED_COUNT];
 static LedMode led_mode = LedMode::Boot;
 static LedNet led_net = LedNet::Connecting;
-static LedGateColor gate_colors[GATE_COUNT]{};
+static CRGB gate_colors[GATE_COUNT]{};
+static CRGB clock_color = CRGB::Black;
 static uint32_t mode_last_ms = 0;
 static bool connecting_led_on = false;
 static uint32_t last_show_us = 0;
@@ -79,33 +81,15 @@ void set_led_net(LedNet net) {
     }
 }
 
-static CRGB led_gate_color_to_crgb(LedGateColor c) {
-    switch (c) {
-        case LedGateColor::Off:
-            return CRGB::Black;
-        case LedGateColor::Red:
-            return CRGB::Red;
-        case LedGateColor::Green:
-            return CRGB::Green;
-        case LedGateColor::Blue:
-            return CRGB::Blue;
-        case LedGateColor::Yellow:
-            return CRGB::Yellow;
-        case LedGateColor::Cyan:
-            return CRGB::Cyan;
-        case LedGateColor::Magenta:
-            return CRGB::Magenta;
-        case LedGateColor::White:
-            return CRGB::White;
-    }
-    return CRGB::Black;
-}
-
-void set_led_gate(uint8_t idx, LedGateColor color) {
+void set_led_gate(uint8_t idx, CRGB color) {
     if (idx >= GATE_COUNT) {
         return;
     }
     gate_colors[idx] = color;
+}
+
+void set_led_clock(CRGB color) {
+    clock_color = color;
 }
 
 void init_led() {
@@ -165,8 +149,9 @@ void handle_led() {
             } else {
                 for (uint8_t idx = 0; idx < GATE_COUNT; ++idx) {
                     const uint8_t led_idx = (BOARD_LED_COUNT - 1) - idx;
-                    leds[led_idx] = led_gate_color_to_crgb(gate_colors[idx]);
+                    leds[led_idx] = gate_colors[idx];
                 }
+                leds[(BOARD_LED_COUNT - 1) - CLOCK_INDEX] = clock_color;
             }
             break;
         }
