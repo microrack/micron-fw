@@ -10,6 +10,7 @@
 
 static constexpr const char* MANUFACTURER = "PLAYTRONICA";
 static constexpr const char* PRODUCT      = "ORBITA DIY DANDELION";
+static constexpr float SYNTH_TRANSITION_HZ = 4.0f;
 
 // Compare s against expected, ignoring trailing ASCII spaces in s.
 static bool match_trimmed(const char* s, const char* expected) {
@@ -54,6 +55,10 @@ void OrbitaHandler::midi(const MidiEvent& event) {
 
     if (mode_ == OrbitaMode::Common) {
         handle_common_mode_note_event(midi_ch, note, action);
+        return;
+    }
+    if (mode_ == OrbitaMode::Synth) {
+        handle_synth_mode_note_event(midi_ch, note, action);
         return;
     }
     handle_track_mode_note_event(midi_ch, note, action);
@@ -158,15 +163,74 @@ void OrbitaHandler::handle_track_mode_note_event(
     }
 }
 
+void OrbitaHandler::handle_synth_mode_note_event(
+    uint8_t midi_ch,
+    uint8_t note,
+    NoteEventAction action
+) {
+    uint8_t gate_idx = 0;
+    if (!midi_channel_to_gate_idx(midi_ch, &gate_idx)) {
+        return;
+    }
+
+    const int rel_note = static_cast<int>(note) - static_cast<int>(orbita_channel_offset(midi_ch));
+    const int octave_steps = static_cast<int>(midi_ch - MIDI_GATE_CH_FIRST) * 7;  // same as Common
+    const int rel_note_transposed = rel_note + octave_steps;
+
+    if (action == NoteEventAction::NoteOn) {
+        if (held_notes_per_channel_[gate_idx] < 255) {
+            ++held_notes_per_channel_[gate_idx];
+        }
+        led_color_per_channel_[gate_idx] = rel_note_to_color(rel_note_transposed);
+        (void)set_cv(gate_idx, rel_major_steps_to_volts(rel_note_transposed));
+        set_gate(gate_idx, true);
+        if (!mode_transition_in_progress()) {
+            set_led_gate(gate_idx, led_color_per_channel_[gate_idx]);
+        }
+        logger_printf(
+            "Orbita Synth NoteOn ch=%u note=%u rel_note_transposed=%d",
+            static_cast<unsigned>(midi_ch),
+            static_cast<unsigned>(note),
+            rel_note_transposed
+        );
+        return;
+    }
+
+    if (action == NoteEventAction::NoteOff) {
+        if (held_notes_per_channel_[gate_idx] > 0) {
+            --held_notes_per_channel_[gate_idx];
+        }
+        if (held_notes_per_channel_[gate_idx] == 0) {
+            set_gate(gate_idx, false);
+            led_color_per_channel_[gate_idx] = CRGB::Black;
+            if (!mode_transition_in_progress()) {
+                set_led_gate(gate_idx, CRGB::Black);
+            }
+        }
+    }
+}
+
 void OrbitaHandler::press() {
-    mode_ = (mode_ == OrbitaMode::Track) ? OrbitaMode::Common : OrbitaMode::Track;
+    switch (mode_) {
+        case OrbitaMode::Track:
+            mode_ = OrbitaMode::Common;
+            break;
+        case OrbitaMode::Common:
+            mode_ = OrbitaMode::Synth;
+            break;
+        case OrbitaMode::Synth:
+            mode_ = OrbitaMode::Track;
+            break;
+    }
     // Modes keep independent note accounting; reset note/output state on switch
     // to avoid stale counters affecting the new mode.
     reset_outputs();
+    apply_cv_gate_mode_for_current_orbita_mode();
     mode_transition_pending_ = true;
     logger_printf(
         "OrbitaHandler: mode switched to %s",
-        (mode_ == OrbitaMode::Track) ? "Track" : "Common"
+        (mode_ == OrbitaMode::Track) ? "Track" :
+        (mode_ == OrbitaMode::Common) ? "Common" : "Synth"
     );
 }
 
@@ -192,8 +256,10 @@ void OrbitaHandler::tick(float dt_sec, uint32_t now_ms) {
     const float progress = static_cast<float>(elapsed_ms) / static_cast<float>(MODE_TRANSITION_MS);
     if (mode_ == OrbitaMode::Track) {
         render_track_mode_transition(progress);
-    } else {
+    } else if (mode_ == OrbitaMode::Common) {
         render_common_mode_transition(progress);
+    } else {
+        render_synth_mode_transition(progress);
     }
 }
 
@@ -202,6 +268,7 @@ void OrbitaHandler::enter() {
     mode_ = OrbitaMode::Track;
     mode_transition_active_ = false;
     mode_transition_pending_ = false;
+    apply_cv_gate_mode_for_current_orbita_mode();
     logger_printf("OrbitaHandler: mode %s", "Track");
     reset_outputs();
 
@@ -224,7 +291,16 @@ void OrbitaHandler::enter() {
 
 void OrbitaHandler::exit() {
     logger_printf("OrbitaHandler: exit");
+    set_cv_gate_mode(CvGateMode::CvGate);
     reset_outputs();
+}
+
+void OrbitaHandler::apply_cv_gate_mode_for_current_orbita_mode() {
+    if (mode_ == OrbitaMode::Synth) {
+        set_cv_gate_mode(CvGateMode::Synth);
+    } else {
+        set_cv_gate_mode(CvGateMode::CvGate);
+    }
 }
 
 bool OrbitaHandler::midi_channel_to_gate_idx(uint8_t midi_ch_1_to_16, uint8_t* out_gate_idx) {
@@ -349,6 +425,23 @@ void OrbitaHandler::render_common_mode_transition(float progress_0_to_1) {
     for (uint8_t led = 0; led < ORBITA_MIDI_GATE_COUNT; ++led) {
         set_led_gate(led, color);
     }
+}
+
+void OrbitaHandler::render_synth_mode_transition(float progress_0_to_1) {
+    const float clamped = (progress_0_to_1 < 0.0f) ? 0.0f : ((progress_0_to_1 > 1.0f) ? 1.0f : progress_0_to_1);
+    const float phase = clamped * (2.0f * 3.14159265359f * SYNTH_TRANSITION_HZ);
+    const float sine_0_to_1 = 0.5f + 0.5f * sinf(phase);
+
+    // During synth transition only gate 0 is active; all others stay off.
+    for (uint8_t i = 1; i < ORBITA_MIDI_GATE_COUNT; ++i) {
+        set_gate(i, false);
+        set_led_gate(i, CRGB::Black);
+    }
+    set_clock(false);
+    set_led_clock(CRGB::Black);
+
+    set_gate(0, sine_0_to_1 >= 0.5f);
+    set_led_gate(0, scale_color(CRGB::White, sine_0_to_1));
 }
 
 void OrbitaHandler::sync_gates_leds() {

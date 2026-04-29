@@ -16,6 +16,7 @@ class OrbitaHandler : public GadgetHandler {
     enum class OrbitaMode : uint8_t {
         Track,
         Common,
+        Synth,
     };
     enum class NoteEventAction : uint8_t {
         NoteOn,
@@ -41,6 +42,7 @@ class OrbitaHandler : public GadgetHandler {
     void restore_note_leds();
     void render_track_mode_transition(float progress_0_to_1);
     void render_common_mode_transition(float progress_0_to_1);
+    void render_synth_mode_transition(float progress_0_to_1);
     void sync_gates_leds();
     void handle_common_mode_note_event(
         uint8_t midi_ch,
@@ -52,6 +54,12 @@ class OrbitaHandler : public GadgetHandler {
         uint8_t note,
         NoteEventAction action
     );
+    void handle_synth_mode_note_event(
+        uint8_t midi_ch,
+        uint8_t note,
+        NoteEventAction action
+    );
+    void apply_cv_gate_mode_for_current_orbita_mode();
     void reset_outputs();
 
     OrbitaMode mode_ = OrbitaMode::Track;
