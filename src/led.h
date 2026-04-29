@@ -21,3 +21,4 @@ void set_led_mode(LedMode mode);
 void set_led_net(LedNet net);
 void set_led_gate(uint8_t idx, CRGB color);
 void set_led_clock(CRGB color);
+void set_led_all(CRGB color);

@@ -92,6 +92,13 @@ void set_led_clock(CRGB color) {
     clock_color = color;
 }
 
+void set_led_all(CRGB color) {
+    for (uint8_t idx = 0; idx < GATE_COUNT; ++idx) {
+        gate_colors[idx] = color;
+    }
+    clock_color = color;
+}
+
 void init_led() {
     FastLED.addLeds<WS2812, BOARD_LED_PIN, GRB>(leds, BOARD_LED_COUNT);
     FastLED.setBrightness(LED_BRIGHTNESS);

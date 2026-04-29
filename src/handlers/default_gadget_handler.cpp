@@ -19,7 +19,6 @@ static bool channel_maps_to_gate(uint8_t midi_channel_1_to_16, uint8_t* out_gate
     return true;
 }
 
-constexpr uint8_t GATE_COUNT = 4;
 constexpr float PRESS_VOLTAGE_STEPS[] = {0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f};
 constexpr uint8_t CV_CHANNEL_COUNT = GATE_CHANNEL_LAST - GATE_CHANNEL_FIRST + 1;
 static uint8_t g_press_voltage_step_idx = 0;
@@ -39,11 +38,8 @@ static void turn_all_gates_off() {
     for (uint8_t i = 0; i < (GATE_CHANNEL_LAST - GATE_CHANNEL_FIRST + 1); ++i) {
         g_pressed_notes_per_channel[i] = 0;
     }
-    for (uint8_t i = 0; i < GATE_COUNT; ++i) {
-        set_led_gate(i, CRGB::Black);
-        set_gate(i, false);
-    }
-    set_led_clock(CRGB::Black);
+    set_all_gates(false);
+    set_led_all(CRGB::Black);
     set_clock(false);
 }
 
@@ -124,15 +120,7 @@ class DefaultGadgetHandler : public GadgetHandler {
             static_cast<double>(voltage)
         );
 
-        for (uint8_t i = 0; i < CV_CHANNEL_COUNT; ++i) {
-            const bool ok = set_cv(i, voltage);
-            logger_printf(
-                "DefaultGadgetHandler: CV ch=%u voltage=%.1fV result=%s",
-                static_cast<unsigned>(i),
-                static_cast<double>(voltage),
-                ok ? "ok" : "fail"
-            );
-        }
+        set_all_cv(voltage);
 
         g_press_voltage_step_idx =
             static_cast<uint8_t>((g_press_voltage_step_idx + 1) %
@@ -149,9 +137,7 @@ class DefaultGadgetHandler : public GadgetHandler {
     void exit() override {
         logger_printf("DefaultGadgetHandler: exit");
         turn_all_gates_off();
-        for (uint8_t i = 0; i < CV_CHANNEL_COUNT; ++i) {
-            (void)set_cv(i, 0.0f);
-        }
+        set_all_cv(0.0f);
     }
 };
 

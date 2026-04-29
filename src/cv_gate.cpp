@@ -226,6 +226,12 @@ void set_gate(uint8_t idx, bool on) {
     }
 }
 
+void set_all_gates(bool on) {
+    for (uint8_t i = 0; i < GATE_OUT_PIN_COUNT; ++i) {
+        set_gate(i, on);
+    }
+}
+
 void set_clock(bool on) {
     digitalWrite(CLOCK_OUT_PIN, on ? LOW : HIGH);
 }
@@ -254,4 +260,16 @@ bool set_cv(uint8_t channel, float volts) {
     taskEXIT_CRITICAL(&g_cv_codes_lock);
 
     return true;
+}
+
+void set_all_cv(float volts) {
+    for (uint8_t i = 0; i < CV_CHANNEL_COUNT; ++i) {
+        (void)set_cv(i, volts);
+    }
+}
+
+void reset_all_outputs() {
+    set_all_gates(false);
+    set_clock(false);
+    set_all_cv(0.0f);
 }

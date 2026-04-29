@@ -1,9 +1,9 @@
 #include "orbita_handler.h"
 
 #include <cmath>
-#include <cstring>
 
 #include "cv_gate.h"
+#include "handler_utils.h"
 #include "led.h"
 #include "logger.h"
 #include "midi.h"
@@ -11,19 +11,6 @@
 static constexpr const char* MANUFACTURER = "PLAYTRONICA";
 static constexpr const char* PRODUCT      = "ORBITA DIY DANDELION";
 static constexpr float SYNTH_TRANSITION_HZ = 4.0f;
-
-// Compare s against expected, ignoring trailing ASCII spaces in s.
-static bool match_trimmed(const char* s, const char* expected) {
-    if (s == nullptr) {
-        return false;
-    }
-    const size_t len = strlen(s);
-    size_t trimmed = len;
-    while (trimmed > 0 && s[trimmed - 1] == ' ') {
-        --trimmed;
-    }
-    return strncmp(s, expected, trimmed) == 0 && expected[trimmed] == '\0';
-}
 
 bool OrbitaHandler::probe(const UsbDeviceContext& context) {
     return match_trimmed(context.manufacturer_name, MANUFACTURER) &&
@@ -81,12 +68,12 @@ void OrbitaHandler::handle_common_mode_note_event(
         const float volts = rel_major_steps_to_volts(rel_note_transposed);
         const CRGB color = rel_note_to_color(rel_note_transposed);
         const uint8_t active_track_idx = static_cast<uint8_t>(midi_ch - MIDI_GATE_CH_FIRST);
+        set_all_cv(volts);
+        set_all_gates(true);
         for (uint8_t i = 0; i < ORBITA_MIDI_GATE_COUNT; ++i) {
             held_notes_per_channel_[i] = common_mode_held_notes_count_;
             led_color_per_channel_[i] =
                 (i == active_track_idx) ? color : scale_color(color, 0.2f);
-            (void)set_cv(i, volts);
-            set_gate(i, true);
             if (!mode_transition_in_progress()) {
                 set_led_gate(i, led_color_per_channel_[i]);
             }
@@ -106,9 +93,9 @@ void OrbitaHandler::handle_common_mode_note_event(
             --common_mode_held_notes_count_;
         }
         const bool has_any_note = common_mode_held_notes_count_ > 0;
+        set_all_gates(has_any_note);
         for (uint8_t i = 0; i < ORBITA_MIDI_GATE_COUNT; ++i) {
             held_notes_per_channel_[i] = common_mode_held_notes_count_;
-            set_gate(i, has_any_note);
             if (!has_any_note) {
                 led_color_per_channel_[i] = CRGB::Black;
                 if (!mode_transition_in_progress()) {
@@ -454,15 +441,12 @@ void OrbitaHandler::sync_gates_leds() {
 
 void OrbitaHandler::reset_outputs() {
     common_mode_held_notes_count_ = 0;
+    reset_all_outputs();
+    set_led_all(CRGB::Black);
     for (uint8_t i = 0; i < ORBITA_MIDI_GATE_COUNT; ++i) {
         held_notes_per_channel_[i] = 0;
         led_color_per_channel_[i] = CRGB::Black;
-        set_cv(i, 0.0f);
-        set_gate(i, false);
-        set_led_gate(i, CRGB::Black);
     }
-    set_led_clock(CRGB::Black);
-    set_clock(false);
 }
 
 OrbitaHandler g_orbita_handler;
