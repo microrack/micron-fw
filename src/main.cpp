@@ -5,6 +5,7 @@
 #include "config.h"
 #include "handlers/default_gadget_handler.h"
 #include "handlers/orbita_handler.h"
+#include "handlers/playtron_handler.h"
 #include "cv_gate.h"
 #include "gadget_handler.h"
 #include "led.h"
@@ -47,6 +48,7 @@ void setup() {
     gadget_handler_reset_registry();
     gadget_handler_set_current(nullptr);
     (void)gadget_handler_register(&orbita_handler_get());
+    (void)gadget_handler_register(&playtron_handler_get());
     (void)gadget_handler_register(&default_gadget_handler_get());
     midi_input_init();
 
