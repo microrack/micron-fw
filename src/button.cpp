@@ -9,9 +9,10 @@ Button button;
 }  // namespace
 
 void Button::init() {
-    pinMode(TOUCH_PIN, INPUT);
+    const uint8_t touch_pin = board_pins()->touch_pin;
+    pinMode(touch_pin, INPUT);
 
-    const bool raw = digitalRead(TOUCH_PIN) == HIGH;
+    const bool raw = digitalRead(touch_pin) == HIGH;
     last_raw_ = raw;
     stable_state_ = raw;
     last_raw_change_ms_ = millis();
@@ -20,12 +21,12 @@ void Button::init() {
 }
 
 bool Button::read_raw() const {
-    return digitalRead(TOUCH_PIN) == HIGH;
+    return digitalRead(board_pins()->touch_pin) == HIGH;
 }
 
 ButtonEvent Button::handle() {
     const uint32_t now_ms = millis();
-    const bool raw = digitalRead(TOUCH_PIN) == HIGH;
+    const bool raw = digitalRead(board_pins()->touch_pin) == HIGH;
 
     if (raw != last_raw_) {
         last_raw_ = raw;

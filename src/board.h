@@ -4,13 +4,28 @@
 
 #define PROFILING 0
 
-static constexpr uint8_t BOARD_LED_PIN = 18;
-static constexpr uint16_t BOARD_LED_COUNT = 9;
-static constexpr uint8_t TOUCH_PIN = 14;
+/** Maximum WS2812 count across profiles (FastLED buffer size). */
+static constexpr uint16_t BOARD_LED_COUNT_MAX = 9;
+static constexpr uint8_t BOARD_GATE_OUT_COUNT = 4;
 
-/** Digital gate outputs (active low). Indices 0..GATE_OUT_PIN_COUNT-1. */
-static constexpr uint8_t GATE_OUT_PINS[] = {33, 34, 35, 36};
-static constexpr uint8_t GATE_OUT_PIN_COUNT =
-    static_cast<uint8_t>(sizeof(GATE_OUT_PINS) / sizeof(GATE_OUT_PINS[0]));
-/** Dedicated digital clock output (active low). */
-static constexpr uint8_t CLOCK_OUT_PIN = 37;
+/** Runtime pin map (filled from selected hardware profile). */
+struct BoardPinsProfile {
+    const char* name;
+    uint8_t board_led_pin;
+    uint16_t board_led_count;
+    uint8_t touch_pin;
+    uint8_t gate_out_pins[BOARD_GATE_OUT_COUNT];
+    uint8_t clock_out_pin;
+    int mcp4728_sda;
+    int mcp4728_scl;
+    uint8_t gate_led_indices[BOARD_GATE_OUT_COUNT];
+    uint8_t clock_led_index;
+};
+
+/** Available pinout profiles (selected by config `hw_version`). */
+extern const BoardPinsProfile kBoardProfiles[];
+extern const uint8_t kBoardProfilesCount;
+
+struct AppConfig;
+void board_pins_init(const AppConfig& cfg);
+const BoardPinsProfile* board_pins();

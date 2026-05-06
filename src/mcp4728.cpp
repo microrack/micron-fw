@@ -1,13 +1,13 @@
 #include "mcp4728.h"
 
+#include "board.h"
+
 #include <Arduino.h>
 #include <Wire.h>
 
 namespace {
 
 constexpr uint8_t  MCP4728_I2C_ADDR = 0x60;
-constexpr int      MCP4728_SDA      = 9;
-constexpr int      MCP4728_SCL      = 10;
 constexpr uint32_t MCP4728_SCL_HZ   = 400000;
 
 // Single Write command: C2 C1 C0 W1 W0 = 0 1 0 1 1
@@ -19,7 +19,8 @@ static uint8_t g_fast_write_buf[8];
 }  // namespace
 
 void init_mcp4728() {
-    Wire.begin(MCP4728_SDA, MCP4728_SCL);
+    const BoardPinsProfile* pins = board_pins();
+    Wire.begin(pins->mcp4728_sda, pins->mcp4728_scl);
     Wire.setClock(MCP4728_SCL_HZ);
 
     Wire.beginTransmission(MCP4728_I2C_ADDR);

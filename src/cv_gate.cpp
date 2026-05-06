@@ -155,12 +155,13 @@ void cv_dac_worker_task(void*) {
 
 void init_cv_gate() {
     init_mcp4728();
-    for (uint8_t i = 0; i < GATE_OUT_PIN_COUNT; ++i) {
-        pinMode(GATE_OUT_PINS[i], OUTPUT);
-        digitalWrite(GATE_OUT_PINS[i], HIGH);  // off: active-low gates idle high
+    const BoardPinsProfile* pins = board_pins();
+    for (uint8_t i = 0; i < BOARD_GATE_OUT_COUNT; ++i) {
+        pinMode(pins->gate_out_pins[i], OUTPUT);
+        digitalWrite(pins->gate_out_pins[i], HIGH);  // off: active-low gates idle high
     }
-    pinMode(CLOCK_OUT_PIN, OUTPUT);
-    digitalWrite(CLOCK_OUT_PIN, HIGH);  // off: active-low clock idle high
+    pinMode(pins->clock_out_pin, OUTPUT);
+    digitalWrite(pins->clock_out_pin, HIGH);  // off: active-low clock idle high
 
     xTaskCreatePinnedToCore(
         cv_dac_worker_task,
@@ -208,8 +209,9 @@ void set_cv_gate_mode(CvGateMode mode) {
 }
 
 void set_gate(uint8_t idx, bool on) {
-    if (idx < GATE_OUT_PIN_COUNT) {
-        digitalWrite(GATE_OUT_PINS[idx], on ? LOW : HIGH);
+    const BoardPinsProfile* pins = board_pins();
+    if (idx < BOARD_GATE_OUT_COUNT) {
+        digitalWrite(pins->gate_out_pins[idx], on ? LOW : HIGH);
     }
     if (idx < CV_CHANNEL_COUNT) {
         taskENTER_CRITICAL(&g_cv_codes_lock);
@@ -227,13 +229,13 @@ void set_gate(uint8_t idx, bool on) {
 }
 
 void set_all_gates(bool on) {
-    for (uint8_t i = 0; i < GATE_OUT_PIN_COUNT; ++i) {
+    for (uint8_t i = 0; i < BOARD_GATE_OUT_COUNT; ++i) {
         set_gate(i, on);
     }
 }
 
 void set_clock(bool on) {
-    digitalWrite(CLOCK_OUT_PIN, on ? LOW : HIGH);
+    digitalWrite(board_pins()->clock_out_pin, on ? LOW : HIGH);
 }
 
 bool set_cv(uint8_t channel, float volts) {

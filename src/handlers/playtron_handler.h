@@ -23,21 +23,28 @@ class PlaytronHandler : public GadgetHandler {
         NoteOff = 1,
     };
 
+    static constexpr uint8_t kMaxHeldNotes = 16;
+
     void apply_cv_gate_mode_for_current_mode();
+    void apply_clock_led_for_current_mode();
     void restore_note_leds();
     void render_cvgate_mode_transition(float progress_0_to_1);
     void render_synth_mode_transition(float progress_0_to_1);
     uint8_t note_to_output_note(uint8_t note) const;
-    bool find_free_channel(uint8_t* out_channel) const;
-    bool find_channel_for_note(uint8_t note, uint8_t* out_channel) const;
-    void refresh_active_channels_cv();
-    CRGB current_clock_color() const;
-    void clear_channel_state();
+    bool is_note_held(uint8_t note) const;
+    bool add_held_note(uint8_t note);
+    bool remove_held_note(uint8_t note);
+    void apply_voice_outputs(uint8_t note);
+    void release_voice_outputs();
+    void refresh_active_voice_cv();
+    void clear_voice_state();
 
     PlaytronMode mode_ = PlaytronMode::CvGate;
-    bool channel_note_active_[4] = {};
-    uint8_t channel_note_[4] = {};
-    CRGB channel_color_[4] = {};
+    uint8_t held_notes_[kMaxHeldNotes] = {};
+    uint8_t held_count_ = 0;
+    uint8_t last_note_ = 0;
+    bool has_last_note_ = false;
+    CRGB last_color_ = CRGB::Black;
     bool mode_transition_active_ = false;
     bool mode_transition_pending_ = false;
     uint32_t mode_transition_start_ms_ = 0;

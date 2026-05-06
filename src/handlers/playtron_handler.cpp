@@ -82,63 +82,44 @@ void PlaytronHandler::midi(const MidiEvent& event) {
     }
 
     if (action == NoteEventAction::NoteOn) {
-        uint8_t existing_channel = 0;
-        if (find_channel_for_note(note, &existing_channel)) {
+        if (is_note_held(note)) {
             logger_printf(
-                "Playtron NoteOn ignored: note=%u already active on ch=%u",
-                static_cast<unsigned>(note),
-                static_cast<unsigned>(existing_channel)
-            );
-            return;
-        }
-
-        uint8_t free_channel = 0;
-        if (!find_free_channel(&free_channel)) {
-            logger_printf(
-                "Playtron NoteOn ignored: no free channels for note=%u",
+                "Playtron NoteOn ignored: note=%u already held",
                 static_cast<unsigned>(note)
             );
             return;
         }
-
-        const uint8_t output_note = note_to_output_note(note);
-        const float volts = midi_note_to_volts(output_note);
-        const CRGB color = note_to_color(note);
-        channel_note_active_[free_channel] = true;
-        channel_note_[free_channel] = note;
-        channel_color_[free_channel] = color;
-
-        (void)set_cv(free_channel, volts);
-        set_gate(free_channel, true);
-        set_led_gate(free_channel, color);
-        set_led_clock(current_clock_color());
-        set_clock(false);
+        if (!add_held_note(note)) {
+            logger_printf(
+                "Playtron NoteOn ignored: held table full (note=%u)",
+                static_cast<unsigned>(note)
+            );
+            return;
+        }
+        apply_voice_outputs(note);
         return;
     }
 
     if (action == NoteEventAction::NoteOff) {
-        uint8_t active_channel = 0;
-        if (!find_channel_for_note(note, &active_channel)) {
+        if (!remove_held_note(note)) {
             logger_printf(
-                "Playtron NoteOff ignored: note=%u not active",
+                "Playtron NoteOff ignored: note=%u not held",
                 static_cast<unsigned>(note)
             );
             return;
         }
-
-        channel_note_active_[active_channel] = false;
-        channel_note_[active_channel] = 0;
-        channel_color_[active_channel] = CRGB::Black;
-        set_gate(active_channel, false);
-        set_led_gate(active_channel, CRGB::Black);
-        set_led_clock(current_clock_color());
+        if (held_count_ == 0) {
+            release_voice_outputs();
+        }
+        // Otherwise: gates remain ON, CV holds the last NoteOn voltage,
+        // gate LEDs keep the last NoteOn color.
     }
 }
 
 void PlaytronHandler::press() {
     mode_ = (mode_ == PlaytronMode::CvGate) ? PlaytronMode::Synth : PlaytronMode::CvGate;
     apply_cv_gate_mode_for_current_mode();
-    refresh_active_channels_cv();
+    refresh_active_voice_cv();
     mode_transition_pending_ = true;
     logger_printf(
         "PlaytronHandler: mode switched to %s",
@@ -176,16 +157,17 @@ void PlaytronHandler::tick(float dt_sec, uint32_t now_ms) {
 void PlaytronHandler::enter() {
     logger_printf("PlaytronHandler: enter");
     mode_ = PlaytronMode::CvGate;
-    clear_channel_state();
+    clear_voice_state();
     mode_transition_active_ = false;
     mode_transition_pending_ = false;
     apply_cv_gate_mode_for_current_mode();
+    apply_clock_led_for_current_mode();
 }
 
 void PlaytronHandler::exit() {
     logger_printf("PlaytronHandler: exit");
     mode_ = PlaytronMode::CvGate;
-    clear_channel_state();
+    clear_voice_state();
     mode_transition_active_ = false;
     mode_transition_pending_ = false;
     set_cv_gate_mode(CvGateMode::CvGate);
@@ -201,14 +183,22 @@ void PlaytronHandler::apply_cv_gate_mode_for_current_mode() {
     }
 }
 
+void PlaytronHandler::apply_clock_led_for_current_mode() {
+    if (mode_ == PlaytronMode::Synth) {
+        set_led_clock(CRGB::White);
+    } else {
+        set_led_clock(CRGB::Purple);
+    }
+}
+
 void PlaytronHandler::restore_note_leds() {
     set_led_all(CRGB::Black);
-    for (uint8_t i = 0; i < GATE_COUNT; ++i) {
-        if (channel_note_active_[i]) {
-            set_led_gate(i, channel_color_[i]);
+    if (held_count_ != 0 && has_last_note_) {
+        for (uint8_t i = 0; i < GATE_COUNT; ++i) {
+            set_led_gate(i, last_color_);
         }
     }
-    set_led_clock(current_clock_color());
+    apply_clock_led_for_current_mode();
 }
 
 void PlaytronHandler::render_cvgate_mode_transition(float progress_0_to_1) {
@@ -251,60 +241,87 @@ uint8_t PlaytronHandler::note_to_output_note(uint8_t note) const {
     return (shifted > 127U) ? 127U : static_cast<uint8_t>(shifted);
 }
 
-bool PlaytronHandler::find_free_channel(uint8_t* out_channel) const {
-    if (out_channel == nullptr) {
-        return false;
-    }
-    for (uint8_t i = 0; i < GATE_COUNT; ++i) {
-        if (!channel_note_active_[i]) {
-            *out_channel = i;
+bool PlaytronHandler::is_note_held(uint8_t note) const {
+    for (uint8_t i = 0; i < held_count_; ++i) {
+        if (held_notes_[i] == note) {
             return true;
         }
     }
     return false;
 }
 
-bool PlaytronHandler::find_channel_for_note(uint8_t note, uint8_t* out_channel) const {
-    if (out_channel == nullptr) {
+bool PlaytronHandler::add_held_note(uint8_t note) {
+    if (held_count_ >= kMaxHeldNotes) {
         return false;
     }
-    for (uint8_t i = 0; i < GATE_COUNT; ++i) {
-        if (channel_note_active_[i] && channel_note_[i] == note) {
-            *out_channel = i;
-            return true;
-        }
-    }
-    return false;
+    held_notes_[held_count_++] = note;
+    return true;
 }
 
-void PlaytronHandler::refresh_active_channels_cv() {
-    for (uint8_t i = 0; i < GATE_COUNT; ++i) {
-        if (!channel_note_active_[i]) {
+bool PlaytronHandler::remove_held_note(uint8_t note) {
+    for (uint8_t i = 0; i < held_count_; ++i) {
+        if (held_notes_[i] != note) {
             continue;
         }
-        const uint8_t output_note = note_to_output_note(channel_note_[i]);
-        const float volts = midi_note_to_volts(output_note);
+        for (uint8_t j = static_cast<uint8_t>(i + 1); j < held_count_; ++j) {
+            held_notes_[j - 1] = held_notes_[j];
+        }
+        --held_count_;
+        held_notes_[held_count_] = 0;
+        return true;
+    }
+    return false;
+}
+
+void PlaytronHandler::apply_voice_outputs(uint8_t note) {
+    const uint8_t output_note = note_to_output_note(note);
+    const float volts = midi_note_to_volts(output_note);
+    const CRGB color = note_to_color(note);
+
+    last_note_ = note;
+    has_last_note_ = true;
+    last_color_ = color;
+
+    for (uint8_t i = 0; i < GATE_COUNT; ++i) {
         (void)set_cv(i, volts);
         set_gate(i, true);
+        set_led_gate(i, color);
     }
     set_clock(false);
 }
 
-CRGB PlaytronHandler::current_clock_color() const {
+void PlaytronHandler::release_voice_outputs() {
     for (uint8_t i = 0; i < GATE_COUNT; ++i) {
-        if (channel_note_active_[i]) {
-            return channel_color_[i];
-        }
+        set_gate(i, false);
+        set_led_gate(i, CRGB::Black);
     }
-    return CRGB::Black;
+    set_clock(false);
 }
 
-void PlaytronHandler::clear_channel_state() {
-    for (uint8_t i = 0; i < GATE_COUNT; ++i) {
-        channel_note_active_[i] = false;
-        channel_note_[i] = 0;
-        channel_color_[i] = CRGB::Black;
+void PlaytronHandler::refresh_active_voice_cv() {
+    if (held_count_ > 0 && has_last_note_) {
+        const uint8_t output_note = note_to_output_note(last_note_);
+        const float volts = midi_note_to_volts(output_note);
+        for (uint8_t i = 0; i < GATE_COUNT; ++i) {
+            (void)set_cv(i, volts);
+            set_gate(i, true);
+        }
+    } else {
+        for (uint8_t i = 0; i < GATE_COUNT; ++i) {
+            set_gate(i, false);
+        }
     }
+    set_clock(false);
+}
+
+void PlaytronHandler::clear_voice_state() {
+    for (uint8_t i = 0; i < kMaxHeldNotes; ++i) {
+        held_notes_[i] = 0;
+    }
+    held_count_ = 0;
+    last_note_ = 0;
+    has_last_note_ = false;
+    last_color_ = CRGB::Black;
 }
 
 namespace {

@@ -2,3 +2,5 @@ usb=0
 wifi=0
 ssid=
 password=
+# Pinout profile: `current` (default) or `legacy`
+hw_version=current

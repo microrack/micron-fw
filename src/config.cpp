@@ -6,13 +6,15 @@
 
 namespace {
 constexpr const char* CONFIG_PATH = "/config.txt";
-constexpr const char* DEFAULT_CONFIG_CONTENT = "usb=0\nwifi=0\nssid=\npassword=\n";
+constexpr const char* DEFAULT_CONFIG_CONTENT =
+    "usb=0\nwifi=0\nssid=\npassword=\nhw_version=current\n";
 
 AppConfig g_config = {
     .usb = false,
     .wifi = false,
     .ssid = "",
     .password = "",
+    .hw_version = "",
 };
 
 bool parse_bool_value(const String& raw_value, bool* out_value) {
@@ -77,6 +79,11 @@ void parse_line(const String& raw_line) {
     }
     if (key == "password") {
         copy_string_value(value, g_config.password, sizeof(g_config.password));
+        return;
+    }
+    if (key == "hw_version" || key == "hw_verison") {
+        copy_string_value(value, g_config.hw_version, sizeof(g_config.hw_version));
+        return;
     }
 }
 
@@ -114,6 +121,7 @@ AppConfig config_init() {
         .wifi = false,
         .ssid = "",
         .password = "",
+        .hw_version = "",
     };
     if (!LittleFS.begin(true)) {
         return g_config;

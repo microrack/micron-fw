@@ -10,20 +10,15 @@ static constexpr uint16_t CONNECTING_BLINK_MS = 150;
 static constexpr uint32_t NET_AP_CONNECTED_SPLASH_MS = 1000;
 static constexpr uint32_t SHOW_MIN_INTERVAL_US = 10000;
 static constexpr uint8_t GATE_COUNT = 4;
-static constexpr uint8_t CLOCK_INDEX = 4;
-// Only LEDs 4..8 are driven; 0..3 stay off. In Normal mode, net uses LED 4 only
-// while showing net status; gate view uses the usual map (incl. LED 4 for gate 4).
-static constexpr uint8_t LED_ACTIVE_FIRST = 4;
-static constexpr uint8_t LED_ACTIVE_COUNT = 5;
-static constexpr uint8_t LED_NET_INDICATOR = 4;
 
-static CRGB leds[BOARD_LED_COUNT];
+static CRGB leds[BOARD_LED_COUNT_MAX];
 static LedMode led_mode = LedMode::Boot;
 static LedNet led_net = LedNet::Connecting;
 static CRGB gate_colors[GATE_COUNT]{};
 static CRGB clock_color = CRGB::Black;
 static uint32_t mode_last_ms = 0;
 static bool connecting_led_on = false;
+static uint8_t boot_color_index = 0;
 static uint32_t last_show_us = 0;
 static uint32_t net_ap_connected_splash_start_ms = 0;
 
@@ -57,6 +52,12 @@ void set_led_mode(LedMode mode) {
     switch (led_mode) {
         case LedMode::Boot:
             mode_last_ms = 0;
+            connecting_led_on = false;
+            boot_color_index = 0;
+            break;
+        case LedMode::PreBoot:
+            mode_last_ms = 0;
+            connecting_led_on = false;
             break;
         case LedMode::Normal:
             mode_last_ms = 0;
@@ -99,16 +100,35 @@ void set_led_all(CRGB color) {
     clock_color = color;
 }
 
+static void add_leds_for_pin(uint8_t data_pin) {
+    switch (data_pin) {
+        case 18:
+            FastLED.addLeds<WS2812, 18, GRB>(
+                leds, BOARD_LED_COUNT_MAX);
+            break;
+        case 37:
+            FastLED.addLeds<WS2812, 37, GRB>(
+                leds, BOARD_LED_COUNT_MAX);
+            break;
+        default:
+            FastLED.addLeds<WS2812, 37, GRB>(
+                leds, BOARD_LED_COUNT_MAX);
+            break;
+    }
+}
+
 void init_led() {
-    FastLED.addLeds<WS2812, BOARD_LED_PIN, GRB>(leds, BOARD_LED_COUNT);
+    add_leds_for_pin(board_pins()->board_led_pin);
     FastLED.setBrightness(LED_BRIGHTNESS);
-    fill_solid(leds, BOARD_LED_COUNT, CRGB::Black);
+    fill_solid(leds, board_pins()->board_led_count, CRGB::Black);
     FastLED.show();
     last_show_us = micros();
 }
 
 void handle_led() {
     const uint32_t now = millis();
+    const BoardPinsProfile* pins = board_pins();
+    const uint16_t n_led = board_pins()->board_led_count;
 
     switch (led_mode) {
         case LedMode::Boot: {
@@ -116,25 +136,42 @@ void handle_led() {
                 return;
             }
             mode_last_ms = now;
+            connecting_led_on = !connecting_led_on;
+            if (connecting_led_on) {
+                boot_color_index = static_cast<uint8_t>((boot_color_index + 1) % COLOR_COUNT);
+            }
 
-            const uint32_t step = now / STEP_MS;
-            const uint32_t phase = step % (LED_ACTIVE_COUNT * COLOR_COUNT);
-            const uint8_t led_index =
-                static_cast<uint8_t>(LED_ACTIVE_FIRST + (phase / COLOR_COUNT));
-            const uint8_t color_index = phase % COLOR_COUNT;
-
-            fill_solid(leds, BOARD_LED_COUNT, CRGB::Black);
-            leds[led_index] = COLORS[color_index];
+            fill_solid(leds, n_led, CRGB::Black);
+            if (connecting_led_on) {
+                for (uint8_t idx = 0; idx < GATE_COUNT; ++idx) {
+                    const uint8_t led_idx = pins->gate_led_indices[idx];
+                    if (led_idx < n_led) {
+                        leds[led_idx] = COLORS[boot_color_index];
+                    }
+                }
+            }
             break;
         }
 
-        case LedMode::PreBoot:
-            fill_solid(leds, BOARD_LED_COUNT, CRGB::Black);
-            fill_solid(leds + LED_ACTIVE_FIRST, LED_ACTIVE_COUNT, CRGB::White);
+        case LedMode::PreBoot: {
+            if (now - mode_last_ms >= CONNECTING_BLINK_MS) {
+                mode_last_ms = now;
+                connecting_led_on = !connecting_led_on;
+            }
+            fill_solid(leds, n_led, CRGB::Black);
+            if (connecting_led_on) {
+                for (uint8_t idx = 0; idx < GATE_COUNT; ++idx) {
+                    const uint8_t led_idx = pins->gate_led_indices[idx];
+                    if (led_idx < n_led) {
+                        leds[led_idx] = CRGB::White;
+                    }
+                }
+            }
             break;
+        }
 
         case LedMode::Normal: {
-            fill_solid(leds, BOARD_LED_COUNT, CRGB::Black);
+            fill_solid(leds, n_led, CRGB::Black);
 
             const bool net_status_phase =
                 (led_net == LedNet::Connecting) ||
@@ -142,23 +179,24 @@ void handle_led() {
                  (now - net_ap_connected_splash_start_ms) < NET_AP_CONNECTED_SPLASH_MS);
 
             if (net_status_phase) {
-                if (led_net == LedNet::Connecting) {
-                    if (now - mode_last_ms >= CONNECTING_BLINK_MS) {
-                        mode_last_ms = now;
-                        connecting_led_on = !connecting_led_on;
-                    }
-                    leds[LED_NET_INDICATOR] =
-                        connecting_led_on ? CRGB::Green : CRGB::Black;
-                } else {
-                    leds[LED_NET_INDICATOR] =
+                if (now - mode_last_ms >= CONNECTING_BLINK_MS) {
+                    mode_last_ms = now;
+                    connecting_led_on = !connecting_led_on;
+                }
+                if (pins->clock_led_index < n_led && connecting_led_on) {
+                    leds[pins->clock_led_index] =
                         (led_net == LedNet::Ap) ? CRGB::Red : CRGB::Green;
                 }
             } else {
                 for (uint8_t idx = 0; idx < GATE_COUNT; ++idx) {
-                    const uint8_t led_idx = (BOARD_LED_COUNT - 1) - idx;
-                    leds[led_idx] = gate_colors[idx];
+                    const uint8_t led_idx = pins->gate_led_indices[idx];
+                    if (led_idx < n_led) {
+                        leds[led_idx] = gate_colors[idx];
+                    }
                 }
-                leds[(BOARD_LED_COUNT - 1) - CLOCK_INDEX] = clock_color;
+                if (pins->clock_led_index < n_led) {
+                    leds[pins->clock_led_index] = clock_color;
+                }
             }
             break;
         }

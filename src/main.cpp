@@ -19,6 +19,7 @@
 static AppConfig g_app_config = {
     .usb = false,
     .wifi = false,
+    .hw_version = "",
 };
 
 static void check_boot_mode_pin() {
@@ -33,17 +34,21 @@ static void check_boot_mode_pin() {
         }
     }
 }
+
 void setup() {
+    g_app_config = config_init();
+    board_pins_init(g_app_config);
+
     button_init();
     init_cv_gate();
     init_led();
     logger_init();
     profiling_init();
     ota_init();
-    g_app_config = config_init();
 
-    logger_printf("app config: usb: %d, wifi: %d, ssid: %s\n",
-        g_app_config.usb, g_app_config.wifi, g_app_config.ssid);
+    logger_printf("app config: usb: %d, wifi: %d, ssid: %s, hw: %s (%s)\n",
+        g_app_config.usb, g_app_config.wifi, g_app_config.ssid,
+        g_app_config.hw_version, board_pins()->name);
 
     gadget_handler_reset_registry();
     gadget_handler_set_current(nullptr);
