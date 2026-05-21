@@ -10,9 +10,10 @@ enum class LedMode : uint8_t {
 };
 
 enum class LedNet : uint8_t {
-    Connecting = 0,
-    Ap = 1,
-    Connected = 2,
+    Disabled = 0,
+    Connecting = 1,
+    Ap = 2,
+    Connected = 3,
 };
 
 void init_led();

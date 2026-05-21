@@ -92,16 +92,18 @@ void loop() {
     LOOP_PROFILE(LoopProfileSlot::HandleNet, handle_net());
     LOOP_PROFILE(LoopProfileSlot::OtaHandle, ota_handle(net_get_state(), APP_WIFI_ENABLED));
 
-    switch (net_get_state()) {
-        case NetState::Connecting:
-            set_led_net(LedNet::Connecting);
-            break;
-        case NetState::Ap:
-            set_led_net(LedNet::Ap);
-            break;
-        case NetState::Client:
-            set_led_net(LedNet::Connected);
-            break;
+    if (APP_WIFI_ENABLED) {
+        switch (net_get_state()) {
+            case NetState::Connecting:
+                set_led_net(LedNet::Connecting);
+                break;
+            case NetState::Ap:
+                set_led_net(LedNet::Ap);
+                break;
+            case NetState::Client:
+                set_led_net(LedNet::Connected);
+                break;
+        }
     }
 
     LOOP_PROFILE(LoopProfileSlot::HandleLed, handle_led());

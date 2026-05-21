@@ -5,7 +5,10 @@
 #include "led.h"
 
 static constexpr uint8_t LED_BRIGHTNESS = 96;
-static constexpr uint16_t STEP_MS = 50;
+/** PreBoot: white at 30% (255 * 0.3). */
+static constexpr uint8_t PREBOOT_WHITE_LEVEL = 77;
+static const CRGB PREBOOT_WHITE = CRGB(PREBOOT_WHITE_LEVEL, PREBOOT_WHITE_LEVEL, PREBOOT_WHITE_LEVEL);
+static constexpr uint16_t STEP_MS = 350;
 static constexpr uint16_t CONNECTING_BLINK_MS = 150;
 static constexpr uint32_t NET_AP_CONNECTED_SPLASH_MS = 1000;
 static constexpr uint32_t SHOW_MIN_INTERVAL_US = 10000;
@@ -13,7 +16,7 @@ static constexpr uint8_t GATE_COUNT = 4;
 
 static CRGB leds[BOARD_LED_COUNT_MAX];
 static LedMode led_mode = LedMode::Boot;
-static LedNet led_net = LedNet::Connecting;
+static LedNet led_net = LedNet::Disabled;
 static CRGB gate_colors[GATE_COUNT]{};
 static CRGB clock_color = CRGB::Black;
 static uint32_t mode_last_ms = 0;
@@ -153,30 +156,19 @@ void handle_led() {
             break;
         }
 
-        case LedMode::PreBoot: {
-            if (now - mode_last_ms >= CONNECTING_BLINK_MS) {
-                mode_last_ms = now;
-                connecting_led_on = !connecting_led_on;
-            }
-            fill_solid(leds, n_led, CRGB::Black);
-            if (connecting_led_on) {
-                for (uint8_t idx = 0; idx < GATE_COUNT; ++idx) {
-                    const uint8_t led_idx = pins->gate_led_indices[idx];
-                    if (led_idx < n_led) {
-                        leds[led_idx] = CRGB::White;
-                    }
-                }
-            }
+        case LedMode::PreBoot:
+            fill_solid(leds, n_led, PREBOOT_WHITE);
+            FastLED.show();
             break;
-        }
 
         case LedMode::Normal: {
             fill_solid(leds, n_led, CRGB::Black);
 
             const bool net_status_phase =
-                (led_net == LedNet::Connecting) ||
-                ((led_net == LedNet::Ap || led_net == LedNet::Connected) &&
-                 (now - net_ap_connected_splash_start_ms) < NET_AP_CONNECTED_SPLASH_MS);
+                led_net != LedNet::Disabled &&
+                ((led_net == LedNet::Connecting) ||
+                 ((led_net == LedNet::Ap || led_net == LedNet::Connected) &&
+                  (now - net_ap_connected_splash_start_ms) < NET_AP_CONNECTED_SPLASH_MS));
 
             if (net_status_phase) {
                 if (now - mode_last_ms >= CONNECTING_BLINK_MS) {
