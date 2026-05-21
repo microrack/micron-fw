@@ -22,10 +22,9 @@ struct BoardPinsProfile {
     uint8_t clock_led_index;
 };
 
-/** Available pinout profiles (selected by config `hw_version`). */
+/** Available pinout profiles (selected by APP_HW_VERSION). */
 extern const BoardPinsProfile kBoardProfiles[];
 extern const uint8_t kBoardProfilesCount;
 
-struct AppConfig;
-void board_pins_init(const AppConfig& cfg);
+void board_pins_init();
 const BoardPinsProfile* board_pins();

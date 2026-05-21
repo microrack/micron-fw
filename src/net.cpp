@@ -1,5 +1,26 @@
 #include "net.h"
 #include "cpu_affinity.h"
+
+#if __has_include("app_config.h")
+#include "app_config.h"
+#endif
+#ifndef APP_WIFI_ENABLED
+#define APP_WIFI_ENABLED 0
+#endif
+#if APP_WIFI_ENABLED
+#ifndef APP_WIFI_SSID
+#error "APP_WIFI_SSID must be defined in src/app_config.h when APP_WIFI_ENABLED is 1"
+#endif
+#ifndef APP_WIFI_PASSWORD
+#error "APP_WIFI_PASSWORD must be defined in src/app_config.h when APP_WIFI_ENABLED is 1"
+#endif
+#if (APP_WIFI_SSID)[0] == '\0'
+#error "APP_WIFI_SSID must not be empty when APP_WIFI_ENABLED is 1"
+#endif
+#if (APP_WIFI_PASSWORD)[0] == '\0'
+#error "APP_WIFI_PASSWORD must not be empty when APP_WIFI_ENABLED is 1"
+#endif
+#endif
 #include "logger.h"
 
 #include <Arduino.h>
@@ -196,12 +217,14 @@ static void ensure_log_forwarder_started() {
     );
 }
 
-void net_init(const AppConfig& config) {
-    g_net_enabled = config.wifi;
-    strncpy(g_sta_ssid, config.ssid, sizeof(g_sta_ssid) - 1);
+void net_init() {
+    g_net_enabled = APP_WIFI_ENABLED;
+#if APP_WIFI_ENABLED
+    strncpy(g_sta_ssid, APP_WIFI_SSID, sizeof(g_sta_ssid) - 1);
     g_sta_ssid[sizeof(g_sta_ssid) - 1] = '\0';
-    strncpy(g_sta_password, config.password, sizeof(g_sta_password) - 1);
+    strncpy(g_sta_password, APP_WIFI_PASSWORD, sizeof(g_sta_password) - 1);
     g_sta_password[sizeof(g_sta_password) - 1] = '\0';
+#endif
 
     if (!g_net_enabled) {
         logger_set_output_notify(nullptr);

@@ -1,8 +1,13 @@
 #include "board.h"
 
-#include "config.h"
-
 #include <Arduino.h>
+
+#if __has_include("app_config.h")
+#include "app_config.h"
+#endif
+#ifndef APP_HW_VERSION
+#define APP_HW_VERSION "current"
+#endif
 #include <strings.h>
 
 namespace {
@@ -57,9 +62,9 @@ const BoardPinsProfile kBoardProfiles[] = {
 const uint8_t kBoardProfilesCount =
     static_cast<uint8_t>(sizeof(kBoardProfiles) / sizeof(kBoardProfiles[0]));
 
-void board_pins_init(const AppConfig& cfg) {
+void board_pins_init() {
     g_board_pins = &kBoardProfiles[1];
-    const char* v = cfg.hw_version;
+    const char* v = APP_HW_VERSION;
     if (v[0] == '\0') {
         return;
     }

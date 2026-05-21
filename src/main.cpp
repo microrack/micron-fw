@@ -1,8 +1,14 @@
 #include <Arduino.h>
 
 #include "board.h"
+
+#if __has_include("app_config.h")
+#include "app_config.h"
+#endif
+#ifndef APP_WIFI_ENABLED
+#define APP_WIFI_ENABLED 0
+#endif
 #include "button.h"
-#include "config.h"
 #include "handlers/default_gadget_handler.h"
 #include "handlers/orbita_handler.h"
 #include "handlers/playtron_handler.h"
@@ -15,12 +21,6 @@
 #include "ota.h"
 #include "profiling.h"
 #include "usb_host.h"
-
-static AppConfig g_app_config = {
-    .usb = false,
-    .wifi = false,
-    .hw_version = "",
-};
 
 static void check_boot_mode_pin() {
     set_led_mode(LedMode::PreBoot);
@@ -36,8 +36,7 @@ static void check_boot_mode_pin() {
 }
 
 void setup() {
-    g_app_config = config_init();
-    board_pins_init(g_app_config);
+    board_pins_init();
 
     button_init();
     init_cv_gate();
@@ -46,9 +45,7 @@ void setup() {
     profiling_init();
     ota_init();
 
-    logger_printf("app config: usb: %d, wifi: %d, ssid: %s, hw: %s (%s)\n",
-        g_app_config.usb, g_app_config.wifi, g_app_config.ssid,
-        g_app_config.hw_version, board_pins()->name);
+    logger_printf("app: wifi: %d, hw: %s\n", APP_WIFI_ENABLED, board_pins()->name);
 
     gadget_handler_reset_registry();
     gadget_handler_set_current(nullptr);
@@ -57,14 +54,12 @@ void setup() {
     (void)gadget_handler_register(&default_gadget_handler_get());
     midi_input_init();
 
-    if (g_app_config.usb) {
-        check_boot_mode_pin();
-        const UsbHostConfig usb_host_config = {};
-        usb_host_init(usb_host_config);
-    }
+    check_boot_mode_pin();
+    const UsbHostConfig usb_host_config = {};
+    usb_host_init(usb_host_config);
 
     set_led_mode(LedMode::Normal);
-    net_init(g_app_config);
+    net_init();
 }
 
 // Short delay at end of each iteration reduces CPU load and yields to the scheduler.
@@ -85,7 +80,7 @@ void loop() {
         gadget_handler_get().press();
     }
 
-    if (button_event == ButtonEvent::Hold && g_app_config.wifi) {
+    if (button_event == ButtonEvent::Hold && APP_WIFI_ENABLED) {
         const NetState state = net_get_state();
         if (state == NetState::Ap) {
             net_start_client();
@@ -95,7 +90,7 @@ void loop() {
     }
 
     LOOP_PROFILE(LoopProfileSlot::HandleNet, handle_net());
-    LOOP_PROFILE(LoopProfileSlot::OtaHandle, ota_handle(net_get_state(), g_app_config.wifi));
+    LOOP_PROFILE(LoopProfileSlot::OtaHandle, ota_handle(net_get_state(), APP_WIFI_ENABLED));
 
     switch (net_get_state()) {
         case NetState::Connecting:

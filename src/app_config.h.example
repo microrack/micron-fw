@@ -1,0 +1,11 @@
+#pragma once
+
+// Copy to app_config.h (gitignored) and adjust for your build:
+//   cp src/app_config.h.example src/app_config.h
+
+// #define APP_WIFI_ENABLED 1
+// #define APP_WIFI_SSID "my-network"
+// #define APP_WIFI_PASSWORD "secret"
+
+// Pinout profile: "legacy" or "current" (default "current" in board.cpp)
+// #define APP_HW_VERSION "legacy"

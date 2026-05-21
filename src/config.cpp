@@ -1,5 +1,8 @@
 #include "config.h"
 
+/*
+ * LittleFS config.txt support (disabled).
+ *
 #include <Arduino.h>
 #include <LittleFS.h>
 #include <string.h>
@@ -132,3 +135,4 @@ AppConfig config_init() {
     load_config_file();
     return g_config;
 }
+*/
