@@ -78,37 +78,51 @@ void OrbitaHandler::handle_control_change(uint8_t controller, uint8_t value) {
 }
 
 void OrbitaHandler::handle_note_event(uint8_t midi_ch, uint8_t note, NoteEventAction action) {
-    uint8_t gate_idx = 0;
-    if (!note_channel_to_gate_idx(midi_ch, &gate_idx)) {
+    if (midi_ch < NOTE_CH_FIRST || midi_ch > NOTE_CH_LAST) {
         return;
     }
 
+    // ch 2 -> idx 1, ch 3 -> idx 2, ch 4 -> idx 3 (idx 0 is owned by CC).
+    const uint8_t led_idx = static_cast<uint8_t>(midi_ch - 1);
+
     if (action == NoteEventAction::NoteOn) {
-        const int rel_note =
-            static_cast<int>(note) - static_cast<int>(orbita_channel_offset(midi_ch));
-        if (held_notes_per_channel_[gate_idx] < 255) {
-            ++held_notes_per_channel_[gate_idx];
+        if (common_held_notes_count_ < 255) {
+            ++common_held_notes_count_;
         }
-        const CRGB color = rel_note_to_color(rel_note);
-        (void)set_cv(gate_idx, rel_major_steps_to_volts(rel_note));
-        set_gate(gate_idx, true);
-        set_led_gate(gate_idx, color);
+        if (held_notes_per_channel_[led_idx] < 255) {
+            ++held_notes_per_channel_[led_idx];
+        }
+        const float volts = midi_note_to_volts(note);
+        const CRGB color =
+            rel_note_to_color(static_cast<int>(note) - static_cast<int>(BASE_NOTE));
+        // CV/Gate 1..3 move in unison; only the source channel's LED is touched.
+        for (uint8_t i = NOTE_GATE_FIRST; i <= NOTE_GATE_LAST; ++i) {
+            (void)set_cv(i, volts);
+            set_gate(i, true);
+        }
+        set_led_gate(led_idx, color);
         logger_printf(
-            "Orbita NoteOn ch=%u note=%u rel=%d gate=%u",
+            "Orbita NoteOn ch=%u note=%u volts=%.3f",
             static_cast<unsigned>(midi_ch),
             static_cast<unsigned>(note),
-            rel_note,
-            static_cast<unsigned>(gate_idx)
+            static_cast<double>(volts)
         );
         return;
     }
 
-    if (held_notes_per_channel_[gate_idx] > 0) {
-        --held_notes_per_channel_[gate_idx];
+    if (common_held_notes_count_ > 0) {
+        --common_held_notes_count_;
     }
-    if (held_notes_per_channel_[gate_idx] == 0) {
-        set_gate(gate_idx, false);
-        set_led_gate(gate_idx, CRGB::Black);
+    if (held_notes_per_channel_[led_idx] > 0) {
+        --held_notes_per_channel_[led_idx];
+    }
+    if (held_notes_per_channel_[led_idx] == 0) {
+        set_led_gate(led_idx, CRGB::Black);
+    }
+    if (common_held_notes_count_ == 0) {
+        for (uint8_t i = NOTE_GATE_FIRST; i <= NOTE_GATE_LAST; ++i) {
+            set_gate(i, false);
+        }
     }
 }
 
@@ -130,6 +144,7 @@ void OrbitaHandler::reset_clock_divider() {
 }
 
 void OrbitaHandler::reset_note_state() {
+    common_held_notes_count_ = 0;
     for (uint8_t i = 0; i < CV_GATE_COUNT; ++i) {
         held_notes_per_channel_[i] = 0;
     }
@@ -194,36 +209,16 @@ void OrbitaHandler::exit() {
     reset_note_state();
 }
 
-bool OrbitaHandler::note_channel_to_gate_idx(uint8_t midi_ch, uint8_t* out_gate_idx) {
-    if (midi_ch < NOTE_CH_FIRST || midi_ch > NOTE_CH_LAST) {
-        return false;
+float OrbitaHandler::midi_note_to_volts(uint8_t note) {
+    // Base note BASE_NOTE -> 1 V, +1 V per octave (12 semitones), clamped to 0..5 V.
+    const float v = 1.0f + (static_cast<float>(note) - static_cast<float>(BASE_NOTE)) / 12.0f;
+    if (v < 0.0f) {
+        return 0.0f;
     }
-    // ch 2 -> idx 1, ch 3 -> idx 2, ch 4 -> idx 3 (idx 0 is owned by CC).
-    *out_gate_idx = static_cast<uint8_t>(midi_ch - 1);
-    return true;
-}
-
-uint8_t OrbitaHandler::orbita_channel_offset(uint8_t channel_1_to_16) {
-    static constexpr uint8_t OFFSETS[] = {36, 43, 50, 56};
-    if (channel_1_to_16 >= 1 && channel_1_to_16 <= 4) {
-        return OFFSETS[channel_1_to_16 - 1];
+    if (v > 5.0f) {
+        return 5.0f;
     }
-    return 0;
-}
-
-int OrbitaHandler::major_scale_steps_to_semitones(int steps) {
-    if (steps < 0) {
-        return 0;
-    }
-    static constexpr uint8_t MAJOR_SEMITONES_FROM_TONIC[7] = {0, 2, 4, 5, 7, 9, 11};
-    const int oct = steps / 7;
-    const int rem = steps % 7;
-    return oct * 12 + MAJOR_SEMITONES_FROM_TONIC[rem];
-}
-
-float OrbitaHandler::rel_major_steps_to_volts(int rel_note_degrees) {
-    const int semitones = major_scale_steps_to_semitones(rel_note_degrees);
-    return static_cast<float>(semitones) * (1.0f / 12.0f);
+    return v;
 }
 
 CRGB OrbitaHandler::rel_note_to_color(int rel_note) {
