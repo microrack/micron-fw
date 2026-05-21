@@ -1,3 +1,5 @@
 .pio
 data/config.txt
 src/app_config.h
+compile_commands.json
+.vscode
