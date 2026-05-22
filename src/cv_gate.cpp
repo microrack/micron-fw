@@ -1,6 +1,7 @@
 #include "cv_gate.h"
 
 #include "board.h"
+#include "logger.h"
 #include "cpu_affinity.h"
 #include "driver/gptimer.h"
 #include "esp_attr.h"
@@ -209,6 +210,7 @@ void set_cv_gate_mode(CvGateMode mode) {
 }
 
 void set_gate(uint8_t idx, bool on) {
+    logger_printf("set_gate idx=%u on=%u", static_cast<unsigned>(idx), on ? 1U : 0U);
     const BoardPinsProfile* pins = board_pins();
     if (idx < BOARD_GATE_OUT_COUNT) {
         digitalWrite(pins->gate_out_pins[idx], on ? LOW : HIGH);
@@ -235,11 +237,13 @@ void set_all_gates(bool on) {
 }
 
 void set_clock(bool on) {
+    logger_printf("set_clock on=%u", on ? 1U : 0U);
     digitalWrite(board_pins()->clock_out_pin, on ? LOW : HIGH);
 }
 
 bool set_cv(uint8_t channel, float volts) {
     if (channel >= CV_CHANNEL_COUNT) {
+        logger_printf("set_cv ch=%u volts=%.3f rejected: bad channel", static_cast<unsigned>(channel), volts);
         return false;
     }
     if (volts < 0.0f) {
@@ -261,6 +265,11 @@ bool set_cv(uint8_t channel, float volts) {
     g_cv_dirty = true;
     taskEXIT_CRITICAL(&g_cv_codes_lock);
 
+    logger_printf(
+        "set_cv ch=%u volts=%.3f",
+        static_cast<unsigned>(channel),
+        volts
+    );
     return true;
 }
 
