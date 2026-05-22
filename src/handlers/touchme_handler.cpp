@@ -75,8 +75,32 @@ void TouchMeHandler::update_fast_from_held_notes() {
     refresh_fast_led();
 }
 
-void TouchMeHandler::apply_cont_from_cc(uint8_t value) {
-    last_touch_cc_ = (value > 127) ? 127 : value;
+uint8_t TouchMeHandler::normalize_cc(uint8_t raw) {
+    if (raw > 127) {
+        raw = 127;
+    }
+    if (raw > cc_max_) {
+        cc_max_ = raw;
+    }
+    if (cc_max_ == 0) {
+        return 0;
+    }
+    const uint16_t scaled =
+        (static_cast<uint16_t>(raw) * 127u + cc_max_ / 2) / cc_max_;
+    return static_cast<uint8_t>(scaled > 127 ? 127 : scaled);
+}
+
+void TouchMeHandler::handle_touch_cc(uint8_t raw) {
+    const uint8_t normalized = normalize_cc(raw);
+    logger_printf("TouchMe CC %u", static_cast<unsigned>(normalized));
+    last_touch_cc_ = normalized;
+    if (touch_active_) {
+        apply_cont_from_cc(normalized);
+    }
+}
+
+void TouchMeHandler::apply_cont_from_cc(uint8_t normalized) {
+    last_touch_cc_ = normalized;
     const float volts =
         (static_cast<float>(last_touch_cc_) / 127.0f) * 5.0f;
     (void)set_cv(CONT, volts);
@@ -173,13 +197,7 @@ void TouchMeHandler::midi(const MidiEvent& event) {
     }
     if (event.type == MidiEventType::ControlChange &&
         event.data.control_change.controller == TOUCH_CC) {
-        const uint8_t value = event.data.control_change.value;
-        logger_printf("TouchMe CC %u", static_cast<unsigned>(value));
-        if (touch_active_) {
-            apply_cont_from_cc(value);
-        } else {
-            last_touch_cc_ = (value > 127) ? 127 : value;
-        }
+        handle_touch_cc(event.data.control_change.value);
     }
 }
 
@@ -211,6 +229,7 @@ void TouchMeHandler::enter() {
     reset_all_outputs();
     set_led_all(CRGB::Black);
     last_touch_cc_ = 0;
+    cc_max_ = kDefaultCcMax;
     reset_touch_state();
 }
 
@@ -220,6 +239,8 @@ void TouchMeHandler::exit() {
     set_cv_gate_mode(CvGateMode::CvGate);
     reset_all_outputs();
     set_led_all(CRGB::Black);
+    last_touch_cc_ = 0;
+    cc_max_ = kDefaultCcMax;
     reset_touch_state();
 }
 

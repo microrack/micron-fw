@@ -24,11 +24,14 @@ class TouchMeHandler : public GadgetHandler {
     static constexpr uint32_t kTouchOffDebounceMs = 10;
     static constexpr uint32_t kFastGatePulseMs = 50;
     static constexpr uint8_t TOUCH_CC = 90;
+    static constexpr uint8_t kDefaultCcMax = 40;
 
     void reset_touch_state();
     void on_note_pressed(uint8_t note, uint32_t now_ms);
     void on_note_released(uint8_t note, uint32_t now_ms);
-    void apply_cont_from_cc(uint8_t value);
+    uint8_t normalize_cc(uint8_t raw);
+    void handle_touch_cc(uint8_t raw);
+    void apply_cont_from_cc(uint8_t normalized);
     void touch_on_outputs();
     void touch_off_outputs();
     void apply_fast_note(uint8_t note, uint32_t now_ms);
@@ -41,6 +44,7 @@ class TouchMeHandler : public GadgetHandler {
     bool touch_active_ = false;
     uint32_t all_notes_off_since_ms_ = 0;
     uint8_t last_touch_cc_ = 0;
+    uint8_t cc_max_ = kDefaultCcMax;
     uint8_t last_fast_note_ = kBaseNote;
     bool fast_gate_pulse_active_ = false;
     uint32_t fast_gate_pulse_end_ms_ = 0;
