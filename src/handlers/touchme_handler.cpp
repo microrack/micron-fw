@@ -2,16 +2,39 @@
 
 #include <Arduino.h>
 
+#include "cv_gate.h"
 #include "handler_utils.h"
+#include "led.h"
 #include "logger.h"
 
 static constexpr const char* MANUFACTURER = "Playtronica";
 static constexpr const char* PRODUCT = "TouchMe";
-static constexpr uint8_t TOUCH_CC = 90;
 
 bool TouchMeHandler::probe(const UsbDeviceContext& context) {
     return match_trimmed(context.manufacturer_name, MANUFACTURER) &&
            match_trimmed(context.product_name, PRODUCT);
+}
+
+void TouchMeHandler::apply_cont_from_cc(uint8_t value) {
+    last_touch_cc_ = (value > 127) ? 127 : value;
+    const float volts =
+        (static_cast<float>(last_touch_cc_) / 127.0f) * 5.0f;
+    (void)set_cv(CONT, volts);
+    const uint8_t brightness = static_cast<uint8_t>(
+        10 + (static_cast<uint16_t>(last_touch_cc_) * 245) / 127
+    );
+    set_led_gate(CONT, CRGB(brightness, brightness, brightness));
+}
+
+void TouchMeHandler::touch_on_outputs() {
+    set_gate(CONT, true);
+    apply_cont_from_cc(last_touch_cc_);
+}
+
+void TouchMeHandler::touch_off_outputs() {
+    set_gate(CONT, false);
+    (void)set_cv(CONT, 0.0f);
+    set_led_gate(CONT, CRGB::Black);
 }
 
 void TouchMeHandler::reset_touch_state() {
@@ -34,6 +57,7 @@ void TouchMeHandler::on_note_pressed(uint8_t note, uint32_t now_ms) {
     if (was_empty && !touch_active_) {
         logger_printf("touch on");
         touch_active_ = true;
+        touch_on_outputs();
     }
     (void)now_ms;
 }
@@ -76,10 +100,13 @@ void TouchMeHandler::midi(const MidiEvent& event) {
     }
     if (event.type == MidiEventType::ControlChange &&
         event.data.control_change.controller == TOUCH_CC) {
-        logger_printf(
-            "TouchMe CC %u",
-            static_cast<unsigned>(event.data.control_change.value)
-        );
+        const uint8_t value = event.data.control_change.value;
+        logger_printf("TouchMe CC %u", static_cast<unsigned>(value));
+        if (touch_active_) {
+            apply_cont_from_cc(value);
+        } else {
+            last_touch_cc_ = (value > 127) ? 127 : value;
+        }
     }
 }
 
@@ -95,16 +122,25 @@ void TouchMeHandler::tick(float dt_sec, uint32_t now_ms) {
         logger_printf("touch off");
         touch_active_ = false;
         all_notes_off_since_ms_ = 0;
+        touch_off_outputs();
     }
 }
 
 void TouchMeHandler::enter() {
     logger_printf("TouchMeHandler: enter");
+    set_cv_gate_mode(CvGateMode::CvGate);
+    reset_all_outputs();
+    set_led_all(CRGB::Black);
+    last_touch_cc_ = 0;
     reset_touch_state();
 }
 
 void TouchMeHandler::exit() {
     logger_printf("TouchMeHandler: exit");
+    touch_off_outputs();
+    set_cv_gate_mode(CvGateMode::CvGate);
+    reset_all_outputs();
+    set_led_all(CRGB::Black);
     reset_touch_state();
 }
 

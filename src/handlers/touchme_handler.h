@@ -25,11 +25,17 @@ class TouchMeHandler : public GadgetHandler {
     void reset_touch_state();
     void on_note_pressed(uint8_t note, uint32_t now_ms);
     void on_note_released(uint8_t note, uint32_t now_ms);
+    void apply_cont_from_cc(uint8_t value);
+    void touch_on_outputs();
+    void touch_off_outputs();
+
+    static constexpr uint8_t TOUCH_CC = 90;
 
     uint8_t held_count_ = 0;
     bool held_notes_[kNoteCount] = {};
     bool touch_active_ = false;
     uint32_t all_notes_off_since_ms_ = 0;
+    uint8_t last_touch_cc_ = 0;
 };
 
 GadgetHandler& touchme_handler_get();
