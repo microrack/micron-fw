@@ -13,3 +13,9 @@ bool match_trimmed(const char* s, const char* expected) {
     }
     return strncmp(s, expected, trimmed) == 0 && expected[trimmed] == '\0';
 }
+
+CRGB rel_note_to_color(int rel_note) {
+    const int semitone = ((rel_note % 12) + 12) % 12;
+    const uint8_t hue = static_cast<uint8_t>((semitone * 255) / 12);
+    return CRGB(CHSV(hue, 255, 255));
+}

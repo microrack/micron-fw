@@ -221,27 +221,6 @@ float OrbitaHandler::midi_note_to_volts(uint8_t note) {
     return v;
 }
 
-CRGB OrbitaHandler::rel_note_to_color(int rel_note) {
-    const int degree_mod = ((rel_note % 7) + 7) % 7;
-    switch (degree_mod) {
-        case 0:
-            return CRGB::Red;
-        case 1:
-            return CRGB::Orange;
-        case 2:
-            return CRGB::Yellow;
-        case 3:
-            return CRGB::Green;
-        case 4:
-            return CRGB::Cyan;
-        case 5:
-            return CRGB::Blue;
-        case 6:
-            return CRGB::Purple;
-    }
-    return CRGB::Black;
-}
-
 float OrbitaHandler::cc_value_to_volts(uint8_t value) {
     constexpr float MAX_CC = 127.0f;
     constexpr float MAX_VOLTS = 5.0f;
