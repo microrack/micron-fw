@@ -15,6 +15,66 @@ bool TouchMeHandler::probe(const UsbDeviceContext& context) {
            match_trimmed(context.product_name, PRODUCT);
 }
 
+float TouchMeHandler::midi_note_to_volts(uint8_t note) {
+    const float v =
+        1.0f + (static_cast<float>(note) - static_cast<float>(kBaseNote)) / 12.0f;
+    if (v < 0.0f) {
+        return 0.0f;
+    }
+    if (v > 5.0f) {
+        return 5.0f;
+    }
+    return v;
+}
+
+void TouchMeHandler::refresh_fast_led() {
+    if (!touch_active_ || held_count_ == 0) {
+        set_led_gate(FAST, CRGB::Black);
+        return;
+    }
+    const int rel_note =
+        static_cast<int>(last_fast_note_) - static_cast<int>(kBaseNote);
+    CRGB color = rel_note_to_color(rel_note);
+    if (fast_gate_pulse_active_) {
+        color.nscale8(51);
+    }
+    set_led_gate(FAST, color);
+}
+
+void TouchMeHandler::apply_fast_note(uint8_t note, uint32_t now_ms) {
+    last_fast_note_ = note;
+    (void)set_cv(FAST, midi_note_to_volts(note));
+    fast_gate_pulse_active_ = true;
+    fast_gate_pulse_end_ms_ = now_ms + kFastGatePulseMs;
+    set_gate(FAST, true);
+    refresh_fast_led();
+}
+
+void TouchMeHandler::update_fast_from_held_notes() {
+    if (held_count_ == 0) {
+        refresh_fast_led();
+        return;
+    }
+    uint8_t voice_note = 0;
+    bool found = false;
+    for (uint8_t i = 0; i < kNoteCount; ++i) {
+        if (!held_notes_[i]) {
+            continue;
+        }
+        if (!found || i > voice_note) {
+            voice_note = i;
+            found = true;
+        }
+    }
+    if (!found) {
+        refresh_fast_led();
+        return;
+    }
+    last_fast_note_ = voice_note;
+    (void)set_cv(FAST, midi_note_to_volts(voice_note));
+    refresh_fast_led();
+}
+
 void TouchMeHandler::apply_cont_from_cc(uint8_t value) {
     last_touch_cc_ = (value > 127) ? 127 : value;
     const float volts =
@@ -35,6 +95,11 @@ void TouchMeHandler::touch_off_outputs() {
     set_gate(CONT, false);
     (void)set_cv(CONT, 0.0f);
     set_led_gate(CONT, CRGB::Black);
+
+    fast_gate_pulse_active_ = false;
+    set_gate(FAST, false);
+    (void)set_cv(FAST, 0.0f);
+    set_led_gate(FAST, CRGB::Black);
 }
 
 void TouchMeHandler::reset_touch_state() {
@@ -44,6 +109,9 @@ void TouchMeHandler::reset_touch_state() {
     }
     touch_active_ = false;
     all_notes_off_since_ms_ = 0;
+    last_fast_note_ = kBaseNote;
+    fast_gate_pulse_active_ = false;
+    fast_gate_pulse_end_ms_ = 0;
 }
 
 void TouchMeHandler::on_note_pressed(uint8_t note, uint32_t now_ms) {
@@ -59,7 +127,9 @@ void TouchMeHandler::on_note_pressed(uint8_t note, uint32_t now_ms) {
         touch_active_ = true;
         touch_on_outputs();
     }
-    (void)now_ms;
+    if (touch_active_) {
+        apply_fast_note(note, now_ms);
+    }
 }
 
 void TouchMeHandler::on_note_released(uint8_t note, uint32_t now_ms) {
@@ -71,6 +141,9 @@ void TouchMeHandler::on_note_released(uint8_t note, uint32_t now_ms) {
         return;
     }
     --held_count_;
+    if (touch_active_) {
+        update_fast_from_held_notes();
+    }
     if (held_count_ == 0 && touch_active_) {
         all_notes_off_since_ms_ = now_ms;
     }
@@ -114,6 +187,12 @@ void TouchMeHandler::press() {}
 
 void TouchMeHandler::tick(float dt_sec, uint32_t now_ms) {
     (void)dt_sec;
+    if (fast_gate_pulse_active_ &&
+        static_cast<int32_t>(now_ms - fast_gate_pulse_end_ms_) >= 0) {
+        fast_gate_pulse_active_ = false;
+        set_gate(FAST, false);
+        refresh_fast_led();
+    }
     if (held_count_ != 0 || !touch_active_ || all_notes_off_since_ms_ == 0) {
         return;
     }
