@@ -14,12 +14,6 @@
 #ifndef APP_WIFI_PASSWORD
 #error "APP_WIFI_PASSWORD must be defined in src/app_config.h when APP_WIFI_ENABLED is 1"
 #endif
-#if (APP_WIFI_SSID)[0] == '\0'
-#error "APP_WIFI_SSID must not be empty when APP_WIFI_ENABLED is 1"
-#endif
-#if (APP_WIFI_PASSWORD)[0] == '\0'
-#error "APP_WIFI_PASSWORD must not be empty when APP_WIFI_ENABLED is 1"
-#endif
 #endif
 #include "logger.h"
 
