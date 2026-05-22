@@ -14,6 +14,11 @@ struct MidiUsbRawPacket {
 
 static QueueHandle_t g_midi_usb_queue = nullptr;
 static constexpr UBaseType_t MIDI_USB_QUEUE_LENGTH = 64;
+static constexpr uint8_t MIDI_DATA_MASK = 0x7F;
+
+static uint8_t midi_data7(uint8_t b) {
+    return b & MIDI_DATA_MASK;
+}
 
 static MidiEventType midi_event_type_from_cin(uint8_t cin) {
     switch (cin) {
@@ -94,8 +99,8 @@ MidiEvent midi_parse_usb_packet(const uint8_t packet[4]) {
 
     const uint8_t cin = packet[0] & 0x0F;
     const uint8_t status = packet[1];
-    const uint8_t data1 = packet[2];
-    const uint8_t data2 = packet[3];
+    const uint8_t data1 = midi_data7(packet[2]);
+    const uint8_t data2 = midi_data7(packet[3]);
     const uint8_t channel = static_cast<uint8_t>((status & 0x0F) + 1);
 
     event.type = midi_event_type_from_cin(cin);
