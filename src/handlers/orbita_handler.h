@@ -52,7 +52,6 @@ class OrbitaHandler : public GadgetHandler {
     void reset_note_state();
 
     static float midi_note_to_volts(uint8_t note);
-    static CRGB rel_note_to_color(int rel_note);
     static float cc_value_to_volts(uint8_t value);
 
     bool clock_pulse_active_ = false;
