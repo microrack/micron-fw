@@ -286,7 +286,11 @@ void PlaytronHandler::apply_voice_outputs(uint8_t note) {
     last_color_ = color;
 
     for (uint8_t i = 0; i < GATE_COUNT; ++i) {
-        (void)set_cv(i, volts);
+        if (mode_ == PlaytronMode::Synth) {
+            (void)set_cv_synth_freq(i, midi_note_to_freq_hz(output_note));
+        } else {
+            (void)set_cv(i, volts);
+        }
         set_gate(i, true);
         set_cv_synth_note(i, true);
         set_led_gate(i, color);
@@ -308,7 +312,11 @@ void PlaytronHandler::refresh_active_voice_cv() {
         const uint8_t output_note = note_to_output_note(last_note_);
         const float volts = midi_note_to_volts(output_note);
         for (uint8_t i = 0; i < GATE_COUNT; ++i) {
-            (void)set_cv(i, volts);
+            if (mode_ == PlaytronMode::Synth) {
+                (void)set_cv_synth_freq(i, midi_note_to_freq_hz(output_note));
+            } else {
+                (void)set_cv(i, volts);
+            }
             set_gate(i, true);
             set_cv_synth_note(i, true);
         }

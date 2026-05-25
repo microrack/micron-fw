@@ -16,6 +16,8 @@ void init_cv_gate();
 void set_cv_mode(CvMode mode);
 void set_gate_mode(GateMode mode);
 void set_cv_synth_note(uint8_t channel, bool on);
+/** Synth voice pitch in Hz for the given CV channel. */
+bool set_cv_synth_freq(uint8_t channel, float frequency_hz);
 void set_gate(uint8_t idx, bool on);
 void set_all_gates(bool on);
 void set_clock(bool on);

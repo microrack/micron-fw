@@ -20,7 +20,6 @@ constexpr uint64_t CV_DAC_TIMER_PERIOD_US = 100;  // 10 kHz synth/cv update tick
 constexpr uint64_t CV_DAC_TIMER_RES_HZ = 1000000;
 constexpr float CV_SYNTH_SAMPLE_RATE_HZ =
     static_cast<float>(CV_DAC_TIMER_RES_HZ) / static_cast<float>(CV_DAC_TIMER_PERIOD_US);
-constexpr float C2_FREQ_HZ = 65.405f;
 constexpr float CV_SYNTH_RISE_SEC = 0.050f;
 constexpr float CV_SYNTH_FALL_SEC = 0.200f;
 constexpr float CV_SYNTH_RISE_STEP =
@@ -305,6 +304,24 @@ void set_cv_synth_note(uint8_t channel, bool on) {
     taskEXIT_CRITICAL(&g_cv_codes_lock);
 }
 
+bool set_cv_synth_freq(uint8_t channel, float frequency_hz) {
+    if (channel >= CV_CHANNEL_COUNT) {
+        return false;
+    }
+    if (frequency_hz < 0.0f) {
+        frequency_hz = 0.0f;
+    }
+    const float max_freq_hz = CV_SYNTH_SAMPLE_RATE_HZ * 0.5f;
+    if (frequency_hz > max_freq_hz) {
+        frequency_hz = max_freq_hz;
+    }
+    const float phase_increment = frequency_hz / CV_SYNTH_SAMPLE_RATE_HZ;
+    taskENTER_CRITICAL(&g_cv_codes_lock);
+    g_cv_phase_increments[channel] = phase_increment;
+    taskEXIT_CRITICAL(&g_cv_codes_lock);
+    return true;
+}
+
 void set_gate(uint8_t idx, bool on) {
     logger_printf("set_gate idx=%u on=%u", static_cast<unsigned>(idx), on ? 1U : 0U);
     if (idx >= BOARD_GATE_OUT_COUNT) {
@@ -375,10 +392,8 @@ bool set_cv(uint8_t channel, float volts) {
     if (code > 4095U) {
         code = 4095U;
     }
-    const float phase_increment = (C2_FREQ_HZ * powf(2.0f, volts)) / CV_SYNTH_SAMPLE_RATE_HZ;
     taskENTER_CRITICAL(&g_cv_codes_lock);
     g_cv_codes[channel] = static_cast<uint16_t>(code & 0x0FFFU);
-    g_cv_phase_increments[channel] = phase_increment;
     taskEXIT_CRITICAL(&g_cv_codes_lock);
 
     //*
