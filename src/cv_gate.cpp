@@ -91,7 +91,7 @@ void apply_gate_outputs(
         bool logical_on = false;
         if (gate_mode[i] == GateMode::Gate) {
             logical_on = gate_on[i];
-        } else if (gate_on[i] && gate_osc_phase_inc[i] > 0U) {
+        } else if (gate_osc_phase_inc[i] > 0U) {
             g_gate_osc_phase[i] += gate_osc_phase_inc[i];
             logical_on = g_gate_osc_phase[i] < gate_osc_duty_phase[i];
         }

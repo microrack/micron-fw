@@ -17,7 +17,7 @@ class TouchMeHandler : public GadgetHandler {
     static constexpr uint8_t FAST = 0;
     static constexpr uint8_t SLOW = 1;
     static constexpr uint8_t CONT = 2;
-    static constexpr uint8_t RANDOM = 3;
+    static constexpr uint8_t RANDOM_OSC = 3;
 
     static constexpr uint8_t BASE_NOTE = 48;
     static constexpr uint8_t NOTE_COUNT = 128;

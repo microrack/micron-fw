@@ -10,6 +10,15 @@
 static constexpr const char* MANUFACTURER = "Playtronica";
 static constexpr const char* PRODUCT = "TouchMe";
 
+namespace {
+
+float velocity_to_osc_duty(uint8_t velocity) {
+    const uint8_t v = (velocity > 127) ? 127 : velocity;
+    return 0.20f + (static_cast<float>(v) / 127.0f) * 0.60f;
+}
+
+}  // namespace
+
 bool TouchMeHandler::probe(const UsbDeviceContext& context) {
     return match_trimmed(context.manufacturer_name, MANUFACTURER) &&
            match_trimmed(context.product_name, PRODUCT);
@@ -54,7 +63,7 @@ void TouchMeHandler::refresh_fast_led() {
 
 void TouchMeHandler::refresh_random_led() {
     if (!touch_active_ || held_count_ == 0) {
-        set_led_gate(RANDOM, CRGB::Black);
+        set_led_gate(RANDOM_OSC, CRGB::Black);
         return;
     }
     const uint8_t v =
@@ -64,15 +73,15 @@ void TouchMeHandler::refresh_random_led() {
     );
     CRGB color = CRGB::Yellow;
     color.nscale8(scale);
-    set_led_gate(RANDOM, color);
+    set_led_gate(RANDOM_OSC, color);
 }
 
 void TouchMeHandler::apply_random_note(uint8_t velocity, uint32_t now_ms) {
     last_random_velocity_ = (velocity > 127) ? 127 : velocity;
-    (void)set_cv(RANDOM, velocity_to_volts(last_random_velocity_));
+    set_fast_pitch(last_fast_note_);
     random_gate_pulse_active_ = true;
     random_gate_pulse_end_ms_ = now_ms + GATE_PULSE_MS;
-    set_gate(RANDOM, true);
+    set_gate(RANDOM_OSC, true);
     refresh_random_led();
 }
 
@@ -98,7 +107,7 @@ void TouchMeHandler::update_random_from_held_notes() {
         return;
     }
     last_random_velocity_ = voice_velocity;
-    (void)set_cv(RANDOM, velocity_to_volts(voice_velocity));
+    set_fast_pitch(last_fast_note_);
     refresh_random_led();
 }
 
@@ -123,6 +132,11 @@ void TouchMeHandler::set_slow_pitch(int rel_note) {
 void TouchMeHandler::set_fast_pitch(int rel_note) {
     last_fast_note_ = rel_note;
     (void)set_cv(FAST, rel_note_to_volts(rel_note));
+    (void)set_gate_osc(
+        RANDOM_OSC,
+        rel_note_to_freq_hz(rel_note, BASE_NOTE),
+        velocity_to_osc_duty(last_random_velocity_)
+    );
     refresh_fast_led();
 }
 
@@ -261,9 +275,9 @@ void TouchMeHandler::touch_off_outputs() {
     set_led_gate(SLOW, CRGB::Black);
 
     random_gate_pulse_active_ = false;
-    set_gate(RANDOM, false);
-    // (void)set_cv(RANDOM, 0.0f);
-    set_led_gate(RANDOM, CRGB::Black);
+    set_gate(RANDOM_OSC, false);
+    (void)set_gate_osc(RANDOM_OSC, 0.0f, 0.0f);
+    set_led_gate(RANDOM_OSC, CRGB::Black);
 }
 
 void TouchMeHandler::reset_touch_state() {
@@ -388,7 +402,7 @@ void TouchMeHandler::tick(float dt_sec, uint32_t now_ms) {
     if (random_gate_pulse_active_ &&
         static_cast<int32_t>(now_ms - random_gate_pulse_end_ms_) >= 0) {
         random_gate_pulse_active_ = false;
-        set_gate(RANDOM, false);
+        set_gate(RANDOM_OSC, false);
         refresh_random_led();
     }
     if (held_count_ != 0 || !touch_active_ || all_notes_off_since_ms_ == 0) {
@@ -406,6 +420,7 @@ void TouchMeHandler::tick(float dt_sec, uint32_t now_ms) {
 void TouchMeHandler::enter() {
     logger_printf("TouchMeHandler: enter");
     set_cv_mode(CvMode::Cv);
+    set_gate_mode(RANDOM_OSC, GateMode::Osc);
     reset_all_outputs();
     set_led_all(CRGB::Black);
     last_touch_cc_ = 0;
@@ -416,6 +431,7 @@ void TouchMeHandler::enter() {
 void TouchMeHandler::exit() {
     logger_printf("TouchMeHandler: exit");
     touch_off_outputs();
+    set_gate_mode(RANDOM_OSC, GateMode::Gate);
     set_cv_mode(CvMode::Cv);
     reset_all_outputs();
     set_led_all(CRGB::Black);
