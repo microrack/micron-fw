@@ -405,7 +405,7 @@ void TouchMeHandler::tick(float dt_sec, uint32_t now_ms) {
 
 void TouchMeHandler::enter() {
     logger_printf("TouchMeHandler: enter");
-    set_cv_gate_mode(CvGateMode::CvGate);
+    set_cv_mode(CvMode::Cv);
     reset_all_outputs();
     set_led_all(CRGB::Black);
     last_touch_cc_ = 0;
@@ -416,7 +416,7 @@ void TouchMeHandler::enter() {
 void TouchMeHandler::exit() {
     logger_printf("TouchMeHandler: exit");
     touch_off_outputs();
-    set_cv_gate_mode(CvGateMode::CvGate);
+    set_cv_mode(CvMode::Cv);
     reset_all_outputs();
     set_led_all(CRGB::Black);
     last_touch_cc_ = 0;

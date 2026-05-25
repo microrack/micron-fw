@@ -27,6 +27,7 @@ constexpr float CV_SYNTH_RISE_STEP =
     1.0f / (CV_SYNTH_RISE_SEC * CV_SYNTH_SAMPLE_RATE_HZ);
 constexpr float CV_SYNTH_FALL_STEP =
     1.0f / (CV_SYNTH_FALL_SEC * CV_SYNTH_SAMPLE_RATE_HZ);
+constexpr uint32_t GATE_OSC_PHASE_MAX = UINT32_MAX;
 
 enum class SynthEnvelopeState : uint8_t {
     Idle = 0,
@@ -49,7 +50,11 @@ static float g_cv_phase[CV_CHANNEL_COUNT] = {};
 static SynthEnvelopeState g_cv_envelope_states[CV_CHANNEL_COUNT] = {};
 static bool g_gate_on[BOARD_GATE_OUT_COUNT] = {};
 static bool g_clock_on = false;
+static uint32_t g_gate_osc_phase_inc[BOARD_GATE_OUT_COUNT] = {};
+static uint32_t g_gate_osc_duty_phase[BOARD_GATE_OUT_COUNT] = {};
+static uint32_t g_gate_osc_phase[BOARD_GATE_OUT_COUNT] = {};
 static CvMode g_mode = CvMode::Cv;
+static GateMode g_gate_mode = GateMode::Gate;
 static portMUX_TYPE g_cv_codes_lock = portMUX_INITIALIZER_UNLOCKED;
 static TaskHandle_t g_cv_dac_task = nullptr;
 static gptimer_handle_t g_cv_dac_timer = nullptr;
@@ -76,10 +81,23 @@ void IRAM_ATTR fast_gpio_write(const FastGpioOut& gpio, bool high) {
     }
 }
 
-void apply_gate_outputs(const bool gate_on[BOARD_GATE_OUT_COUNT], bool clock_on) {
+void apply_gate_outputs(
+    GateMode gate_mode,
+    const bool gate_on[BOARD_GATE_OUT_COUNT],
+    const uint32_t gate_osc_phase_inc[BOARD_GATE_OUT_COUNT],
+    const uint32_t gate_osc_duty_phase[BOARD_GATE_OUT_COUNT],
+    bool clock_on
+) {
     for (uint8_t i = 0; i < BOARD_GATE_OUT_COUNT; ++i) {
+        bool logical_on = false;
+        if (gate_mode == GateMode::Gate) {
+            logical_on = gate_on[i];
+        } else if (gate_on[i] && gate_osc_phase_inc[i] > 0U) {
+            g_gate_osc_phase[i] += gate_osc_phase_inc[i];
+            logical_on = g_gate_osc_phase[i] < gate_osc_duty_phase[i];
+        }
         // Active-low gate: logical on drives the pin low.
-        fast_gpio_write(g_gate_gpios[i], gate_on[i] ? false : true);
+        fast_gpio_write(g_gate_gpios[i], logical_on ? false : true);
     }
     fast_gpio_write(g_clock_gpio, clock_on ? false : true);
 }
@@ -99,8 +117,11 @@ void cv_dac_worker_task(void*) {
     float local_phase_increments[CV_CHANNEL_COUNT] = {};
     float local_amplitudes[CV_CHANNEL_COUNT] = {};
     bool local_gate_on[BOARD_GATE_OUT_COUNT] = {};
+    uint32_t local_gate_osc_phase_inc[BOARD_GATE_OUT_COUNT] = {};
+    uint32_t local_gate_osc_duty_phase[BOARD_GATE_OUT_COUNT] = {};
     bool local_clock_on = false;
     CvMode local_mode = CvMode::Cv;
+    GateMode local_gate_mode = GateMode::Gate;
 
     while (true) {
         (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
@@ -111,12 +132,21 @@ void cv_dac_worker_task(void*) {
         }
         for (uint8_t i = 0; i < BOARD_GATE_OUT_COUNT; ++i) {
             local_gate_on[i] = g_gate_on[i];
+            local_gate_osc_phase_inc[i] = g_gate_osc_phase_inc[i];
+            local_gate_osc_duty_phase[i] = g_gate_osc_duty_phase[i];
         }
         local_clock_on = g_clock_on;
         local_mode = g_mode;
+        local_gate_mode = g_gate_mode;
         taskEXIT_CRITICAL(&g_cv_codes_lock);
 
-        apply_gate_outputs(local_gate_on, local_clock_on);
+        apply_gate_outputs(
+            local_gate_mode,
+            local_gate_on,
+            local_gate_osc_phase_inc,
+            local_gate_osc_duty_phase,
+            local_clock_on
+        );
 
         if (local_mode == CvMode::Cv) {
             (void)mcp4728_write_all(CV_CHANNEL_COUNT, local_codes);
@@ -249,6 +279,17 @@ void set_cv_mode(CvMode mode) {
     taskEXIT_CRITICAL(&g_cv_codes_lock);
 }
 
+void set_gate_mode(GateMode mode) {
+    taskENTER_CRITICAL(&g_cv_codes_lock);
+    g_gate_mode = mode;
+    if (mode == GateMode::Osc) {
+        for (uint8_t i = 0; i < BOARD_GATE_OUT_COUNT; ++i) {
+            g_gate_osc_phase[i] = 0U;
+        }
+    }
+    taskEXIT_CRITICAL(&g_cv_codes_lock);
+}
+
 void set_cv_synth_note(uint8_t channel, bool on) {
     if (channel >= CV_CHANNEL_COUNT) {
         return;
@@ -285,6 +326,36 @@ void set_clock(bool on) {
     taskENTER_CRITICAL(&g_cv_codes_lock);
     g_clock_on = on;
     taskEXIT_CRITICAL(&g_cv_codes_lock);
+}
+
+bool set_gate_osc(uint8_t channel, float frequency_hz, float duty) {
+    if (channel >= BOARD_GATE_OUT_COUNT) {
+        return false;
+    }
+    if (frequency_hz < 0.0f) {
+        frequency_hz = 0.0f;
+    }
+    const float max_freq_hz = CV_SYNTH_SAMPLE_RATE_HZ * 0.5f;
+    if (frequency_hz > max_freq_hz) {
+        frequency_hz = max_freq_hz;
+    }
+    if (duty < 0.0f) {
+        duty = 0.0f;
+    } else if (duty > 1.0f) {
+        duty = 1.0f;
+    }
+    const double phase_inc =
+        (static_cast<double>(frequency_hz) * (static_cast<double>(GATE_OSC_PHASE_MAX) + 1.0)) /
+        static_cast<double>(CV_SYNTH_SAMPLE_RATE_HZ);
+    const uint32_t phase_inc_u32 = static_cast<uint32_t>(phase_inc);
+    const uint32_t duty_phase = (duty >= 1.0f)
+        ? GATE_OSC_PHASE_MAX
+        : static_cast<uint32_t>(static_cast<double>(duty) * (static_cast<double>(GATE_OSC_PHASE_MAX) + 1.0));
+    taskENTER_CRITICAL(&g_cv_codes_lock);
+    g_gate_osc_phase_inc[channel] = phase_inc_u32;
+    g_gate_osc_duty_phase[channel] = duty_phase;
+    taskEXIT_CRITICAL(&g_cv_codes_lock);
+    return true;
 }
 
 bool set_cv(uint8_t channel, float volts) {
