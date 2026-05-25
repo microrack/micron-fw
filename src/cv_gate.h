@@ -14,7 +14,7 @@ enum class GateMode : uint8_t {
 
 void init_cv_gate();
 void set_cv_mode(CvMode mode);
-void set_gate_mode(GateMode mode);
+void set_gate_mode(uint8_t channel, GateMode mode);
 void set_cv_synth_note(uint8_t channel, bool on);
 /** Synth voice pitch in Hz for the given CV channel. */
 bool set_cv_synth_freq(uint8_t channel, float frequency_hz);

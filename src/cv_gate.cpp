@@ -53,7 +53,7 @@ static uint32_t g_gate_osc_phase_inc[BOARD_GATE_OUT_COUNT] = {};
 static uint32_t g_gate_osc_duty_phase[BOARD_GATE_OUT_COUNT] = {};
 static uint32_t g_gate_osc_phase[BOARD_GATE_OUT_COUNT] = {};
 static CvMode g_mode = CvMode::Cv;
-static GateMode g_gate_mode = GateMode::Gate;
+static GateMode g_gate_mode[BOARD_GATE_OUT_COUNT] = {};
 static portMUX_TYPE g_cv_codes_lock = portMUX_INITIALIZER_UNLOCKED;
 static TaskHandle_t g_cv_dac_task = nullptr;
 static gptimer_handle_t g_cv_dac_timer = nullptr;
@@ -81,7 +81,7 @@ void IRAM_ATTR fast_gpio_write(const FastGpioOut& gpio, bool high) {
 }
 
 void apply_gate_outputs(
-    GateMode gate_mode,
+    const GateMode gate_mode[BOARD_GATE_OUT_COUNT],
     const bool gate_on[BOARD_GATE_OUT_COUNT],
     const uint32_t gate_osc_phase_inc[BOARD_GATE_OUT_COUNT],
     const uint32_t gate_osc_duty_phase[BOARD_GATE_OUT_COUNT],
@@ -89,7 +89,7 @@ void apply_gate_outputs(
 ) {
     for (uint8_t i = 0; i < BOARD_GATE_OUT_COUNT; ++i) {
         bool logical_on = false;
-        if (gate_mode == GateMode::Gate) {
+        if (gate_mode[i] == GateMode::Gate) {
             logical_on = gate_on[i];
         } else if (gate_on[i] && gate_osc_phase_inc[i] > 0U) {
             g_gate_osc_phase[i] += gate_osc_phase_inc[i];
@@ -120,7 +120,7 @@ void cv_dac_worker_task(void*) {
     uint32_t local_gate_osc_duty_phase[BOARD_GATE_OUT_COUNT] = {};
     bool local_clock_on = false;
     CvMode local_mode = CvMode::Cv;
-    GateMode local_gate_mode = GateMode::Gate;
+    GateMode local_gate_mode[BOARD_GATE_OUT_COUNT] = {};
 
     while (true) {
         (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
@@ -133,10 +133,10 @@ void cv_dac_worker_task(void*) {
             local_gate_on[i] = g_gate_on[i];
             local_gate_osc_phase_inc[i] = g_gate_osc_phase_inc[i];
             local_gate_osc_duty_phase[i] = g_gate_osc_duty_phase[i];
+            local_gate_mode[i] = g_gate_mode[i];
         }
         local_clock_on = g_clock_on;
         local_mode = g_mode;
-        local_gate_mode = g_gate_mode;
         taskEXIT_CRITICAL(&g_cv_codes_lock);
 
         apply_gate_outputs(
@@ -278,13 +278,14 @@ void set_cv_mode(CvMode mode) {
     taskEXIT_CRITICAL(&g_cv_codes_lock);
 }
 
-void set_gate_mode(GateMode mode) {
+void set_gate_mode(uint8_t channel, GateMode mode) {
+    if (channel >= BOARD_GATE_OUT_COUNT) {
+        return;
+    }
     taskENTER_CRITICAL(&g_cv_codes_lock);
-    g_gate_mode = mode;
+    g_gate_mode[channel] = mode;
     if (mode == GateMode::Osc) {
-        for (uint8_t i = 0; i < BOARD_GATE_OUT_COUNT; ++i) {
-            g_gate_osc_phase[i] = 0U;
-        }
+        g_gate_osc_phase[channel] = 0U;
     }
     taskEXIT_CRITICAL(&g_cv_codes_lock);
 }

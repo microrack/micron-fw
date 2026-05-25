@@ -32,3 +32,14 @@ float midi_note_to_freq_hz(uint8_t note) {
     return MIDI_A4_FREQ_HZ *
         powf(2.0f, (static_cast<int>(note) - MIDI_A4_NOTE) / 12.0f);
 }
+
+float rel_note_to_freq_hz(int rel_note, uint8_t base_note) {
+    const int midi_note = rel_note + static_cast<int>(base_note);
+    if (midi_note < 0) {
+        return midi_note_to_freq_hz(0);
+    }
+    if (midi_note > 127) {
+        return midi_note_to_freq_hz(127);
+    }
+    return midi_note_to_freq_hz(static_cast<uint8_t>(midi_note));
+}
