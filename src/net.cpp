@@ -249,6 +249,7 @@ void net_start_ap() {
 
     stop_server_and_clients();
     WiFi.mode(WIFI_AP);
+    WiFi.setTxPower(WIFI_POWER_8_5dBm);
     WiFi.softAP(AP_SSID);
     start_server_if_needed();
     g_net_state = NetState::Ap;
@@ -267,6 +268,7 @@ void net_start_client() {
 
     stop_server_and_clients();
     WiFi.mode(WIFI_STA);
+    WiFi.setTxPower(WIFI_POWER_8_5dBm);
     WiFi.begin(g_sta_ssid, g_sta_password);
     g_connect_started_ms = millis();
     g_net_state = NetState::Connecting;
