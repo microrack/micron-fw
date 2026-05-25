@@ -7,5 +7,8 @@
 // #define APP_WIFI_SSID "my-network"
 // #define APP_WIFI_PASSWORD "secret"
 
+// 1 = USB device (CDC serial for logs), 0 = USB host (MIDI gadgets). Flash with: pio run -e usb-device -t upload
+// #define APP_USB_DEVICE 1
+
 // Pinout profile: "legacy" or "current" (default "current" in board.cpp)
 // #define APP_HW_VERSION "legacy"
