@@ -2,13 +2,14 @@
 
 #include <stdint.h>
 
-enum class CvGateMode : uint8_t {
-    CvGate = 0,
+enum class CvMode : uint8_t {
+    Cv = 0,
     Synth = 1,
 };
 
 void init_cv_gate();
-void set_cv_gate_mode(CvGateMode mode);
+void set_cv_mode(CvMode mode);
+void set_cv_synth_note(uint8_t channel, bool on);
 void set_gate(uint8_t idx, bool on);
 void set_all_gates(bool on);
 void set_clock(bool on);

@@ -170,16 +170,16 @@ void PlaytronHandler::exit() {
     clear_voice_state();
     mode_transition_active_ = false;
     mode_transition_pending_ = false;
-    set_cv_gate_mode(CvGateMode::CvGate);
+    set_cv_mode(CvMode::Cv);
     reset_all_outputs();
     set_led_all(CRGB::Black);
 }
 
 void PlaytronHandler::apply_cv_gate_mode_for_current_mode() {
     if (mode_ == PlaytronMode::Synth) {
-        set_cv_gate_mode(CvGateMode::Synth);
+        set_cv_mode(CvMode::Synth);
     } else {
-        set_cv_gate_mode(CvGateMode::CvGate);
+        set_cv_mode(CvMode::Cv);
     }
 }
 
@@ -223,12 +223,15 @@ void PlaytronHandler::render_synth_mode_transition(float progress_0_to_1) {
 
     for (uint8_t i = 1; i < GATE_COUNT; ++i) {
         set_gate(i, false);
+        set_cv_synth_note(i, false);
         set_led_gate(i, CRGB::Black);
     }
     set_clock(false);
     set_led_clock(CRGB::Black);
 
-    set_gate(0, sine_0_to_1 >= 0.5f);
+    const bool gate_on = sine_0_to_1 >= 0.5f;
+    set_gate(0, gate_on);
+    set_cv_synth_note(0, gate_on);
     const uint8_t brightness = static_cast<uint8_t>(sine_0_to_1 * 255.0f);
     set_led_gate(0, CRGB(brightness, brightness, brightness));
 }
@@ -285,6 +288,7 @@ void PlaytronHandler::apply_voice_outputs(uint8_t note) {
     for (uint8_t i = 0; i < GATE_COUNT; ++i) {
         (void)set_cv(i, volts);
         set_gate(i, true);
+        set_cv_synth_note(i, true);
         set_led_gate(i, color);
     }
     set_clock(false);
@@ -293,6 +297,7 @@ void PlaytronHandler::apply_voice_outputs(uint8_t note) {
 void PlaytronHandler::release_voice_outputs() {
     for (uint8_t i = 0; i < GATE_COUNT; ++i) {
         set_gate(i, false);
+        set_cv_synth_note(i, false);
         set_led_gate(i, CRGB::Black);
     }
     set_clock(false);
@@ -305,10 +310,12 @@ void PlaytronHandler::refresh_active_voice_cv() {
         for (uint8_t i = 0; i < GATE_COUNT; ++i) {
             (void)set_cv(i, volts);
             set_gate(i, true);
+            set_cv_synth_note(i, true);
         }
     } else {
         for (uint8_t i = 0; i < GATE_COUNT; ++i) {
             set_gate(i, false);
+            set_cv_synth_note(i, false);
         }
     }
     set_clock(false);
