@@ -1,5 +1,15 @@
 #include "logger.h"
 
+#if __has_include("app_config.h")
+#include "app_config.h"
+#endif
+#ifndef APP_USB_DEVICE
+#define APP_USB_DEVICE 0
+#endif
+#if APP_USB_DEVICE
+#include "usb_device.h"
+#endif
+
 extern "C" {
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -65,6 +75,10 @@ void logger_printf(const char* fmt, ...) {
     ++g_log_count;
 
     unlock_logs();
+
+#if APP_USB_DEVICE
+    usb_device_write(formatted);
+#endif
 
     if (g_output_notify != nullptr) {
         g_output_notify();

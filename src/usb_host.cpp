@@ -1,5 +1,26 @@
 #include "usb_host.h"
 
+#if __has_include("app_config.h")
+#include "app_config.h"
+#endif
+#ifndef APP_USB_DEVICE
+#define APP_USB_DEVICE 0
+#endif
+
+#if APP_USB_DEVICE
+
+void usb_host_init(const UsbHostConfig& config) {
+    (void)config;
+}
+
+bool usb_midi_send_packet(const uint8_t* data, size_t size) {
+    (void)data;
+    (void)size;
+    return false;
+}
+
+#else
+
 #include <cstring>
 
 #include "cpu_affinity.h"
@@ -558,3 +579,5 @@ void usb_host_init(const UsbHostConfig& config) {
     xTaskCreatePinnedToCore(usb_daemon_task, "usb_daemon", 4096, nullptr, 20, nullptr, APP_TASK_CORE);
     xTaskCreatePinnedToCore(usb_client_task, "usb_client", 4096, &g_host, 20, nullptr, APP_TASK_CORE);
 }
+
+#endif  // !APP_USB_DEVICE

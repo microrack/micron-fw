@@ -8,6 +8,9 @@
 #ifndef APP_WIFI_ENABLED
 #define APP_WIFI_ENABLED 0
 #endif
+#ifndef APP_USB_DEVICE
+#define APP_USB_DEVICE 0
+#endif
 #include "button.h"
 #include "handlers/default_gadget_handler.h"
 #include "handlers/orbita_handler.h"
@@ -21,7 +24,11 @@
 #include "net.h"
 #include "ota.h"
 #include "profiling.h"
+#if APP_USB_DEVICE
+#include "usb_device.h"
+#else
 #include "usb_host.h"
+#endif
 
 static void check_boot_mode_pin() {
     set_led_mode(LedMode::PreBoot);
@@ -46,7 +53,12 @@ void setup() {
     profiling_init();
     ota_init();
 
-    logger_printf("app: wifi: %d, hw: %s\n", APP_WIFI_ENABLED, board_pins()->name);
+    logger_printf(
+        "app: wifi: %d, usb_device: %d, hw: %s",
+        APP_WIFI_ENABLED,
+        APP_USB_DEVICE,
+        board_pins()->name
+    );
 
     gadget_handler_reset_registry();
     gadget_handler_set_current(nullptr);
@@ -57,8 +69,12 @@ void setup() {
     midi_input_init();
 
     check_boot_mode_pin();
+#if APP_USB_DEVICE
+    usb_device_init();
+#else
     const UsbHostConfig usb_host_config = {};
     usb_host_init(usb_host_config);
+#endif
 
     set_led_mode(LedMode::Normal);
     net_init();
