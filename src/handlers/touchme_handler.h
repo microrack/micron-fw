@@ -25,29 +25,38 @@ class TouchMeHandler : public GadgetHandler {
     static constexpr uint32_t GATE_PULSE_MS = 50;
     static constexpr uint8_t TOUCH_CC = 90;
     static constexpr uint8_t DEFAULT_CC_MAX = 40;
-    static constexpr uint8_t CC_QUARTER_COUNT = 4;
-    static constexpr uint32_t SLOW_ZONE_DEBOUNCE_MS = 10;
+    static constexpr int SLOW_ZONE_MIN =
+        (-static_cast<int>(BASE_NOTE)) / 4;
+    static constexpr int SLOW_ZONE_MAX =
+        (static_cast<int>(NOTE_COUNT) - 1 - static_cast<int>(BASE_NOTE)) / 4;
+    static constexpr int SLOW_ZONE_COUNT =
+        SLOW_ZONE_MAX - SLOW_ZONE_MIN + 1;
 
     void reset_touch_state();
-    void on_note_pressed(uint8_t note, uint8_t velocity, uint32_t now_ms);
-    void on_note_released(uint8_t note, uint32_t now_ms);
+    void reset_slow_zone_latches();
+    int slow_pitch_for_zone(int zone, int rel_note);
+    void on_note_pressed(int rel_note, uint8_t velocity, uint32_t now_ms);
+    void on_note_released(int rel_note, uint32_t now_ms);
+    static bool rel_note_index(int rel_note, uint8_t* index_out);
     uint8_t normalize_cc(uint8_t raw);
     void handle_touch_cc(uint8_t raw, uint32_t now_ms);
     void apply_cont_from_cc(uint8_t normalized);
     void touch_on_outputs();
     void touch_off_outputs();
-    void apply_fast_note(uint8_t note, uint32_t now_ms);
-    void apply_slow_note(uint8_t note, uint32_t now_ms);
+    void apply_fast_note(int rel_note, uint32_t now_ms);
     void apply_random_note(uint8_t velocity, uint32_t now_ms);
-    void update_fast_from_held_notes();
+    void set_fast_pitch(int rel_note);
+    void set_slow_pitch(int rel_note);
+    void pulse_fast_gate(uint32_t now_ms);
+    void pulse_slow_gate(uint32_t now_ms);
+    void update_held_pitch(int rel_note, uint32_t now_ms);
+    void update_slow_zone(int rel_note, uint32_t now_ms, bool pulse_gate);
+    int highest_held_rel_note() const;
     void update_random_from_held_notes();
-    void update_slow_from_cc(uint8_t normalized, uint32_t now_ms);
-    void tick_slow_zone_pending(uint32_t now_ms);
     void refresh_fast_led();
     void refresh_slow_led();
     void refresh_random_led();
-    static uint8_t cc_quarter_from_normalized(uint8_t normalized);
-    static float midi_note_to_volts(uint8_t note);
+    static float rel_note_to_volts(int rel_note);
     static float velocity_to_volts(uint8_t velocity);
 
     uint8_t held_count_ = 0;
@@ -57,17 +66,16 @@ class TouchMeHandler : public GadgetHandler {
     uint32_t all_notes_off_since_ms_ = 0;
     uint8_t last_touch_cc_ = 0;
     uint8_t cc_max_ = DEFAULT_CC_MAX;
-    uint8_t last_fast_note_ = BASE_NOTE;
+    int last_fast_note_ = 0;
     bool fast_gate_pulse_active_ = false;
     uint32_t fast_gate_pulse_end_ms_ = 0;
-    uint8_t last_slow_note_ = BASE_NOTE;
+    int last_slow_note_ = 0;
     bool slow_gate_pulse_active_ = false;
     uint32_t slow_gate_pulse_end_ms_ = 0;
-    bool slow_cc_quarter_valid_ = false;
-    uint8_t slow_cc_quarter_ = 0;
-    bool slow_zone_pending_ = false;
-    uint32_t slow_zone_trigger_at_ms_ = 0;
-    uint8_t last_touch_note_ = BASE_NOTE;
+    bool slow_zone_valid_ = false;
+    int last_slow_zone_ = 0;
+    int slow_zone_pitch_[SLOW_ZONE_COUNT] = {};
+    bool slow_zone_pitch_valid_[SLOW_ZONE_COUNT] = {};
     uint8_t last_random_velocity_ = 0;
     bool random_gate_pulse_active_ = false;
     uint32_t random_gate_pulse_end_ms_ = 0;

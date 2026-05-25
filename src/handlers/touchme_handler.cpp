@@ -15,8 +15,8 @@ bool TouchMeHandler::probe(const UsbDeviceContext& context) {
            match_trimmed(context.product_name, PRODUCT);
 }
 
-float TouchMeHandler::midi_note_to_volts(uint8_t note) {
-    const float v = (static_cast<float>(note) - static_cast<float>(BASE_NOTE)) / 12.0f;
+float TouchMeHandler::rel_note_to_volts(int rel_note) {
+    const float v = static_cast<float>(rel_note) / 12.0f;
     if (v < 0.0f) {
         return 0.0f;
     }
@@ -24,6 +24,15 @@ float TouchMeHandler::midi_note_to_volts(uint8_t note) {
         return 5.0f;
     }
     return v;
+}
+
+bool TouchMeHandler::rel_note_index(int rel_note, uint8_t* index_out) {
+    const int index = rel_note + static_cast<int>(BASE_NOTE);
+    if (index < 0 || index >= static_cast<int>(NOTE_COUNT)) {
+        return false;
+    }
+    *index_out = static_cast<uint8_t>(index);
+    return true;
 }
 
 float TouchMeHandler::velocity_to_volts(uint8_t velocity) {
@@ -36,9 +45,7 @@ void TouchMeHandler::refresh_fast_led() {
         set_led_gate(FAST, CRGB::Black);
         return;
     }
-    const int rel_note =
-        static_cast<int>(last_fast_note_) - static_cast<int>(BASE_NOTE);
-    CRGB color = rel_note_to_color(rel_note);
+    CRGB color = rel_note_to_color(last_fast_note_);
     if (fast_gate_pulse_active_) {
         color.nscale8(51);
     }
@@ -76,11 +83,11 @@ void TouchMeHandler::update_random_from_held_notes() {
     }
     uint8_t voice_velocity = 0;
     bool found = false;
-    for (uint8_t i = 0; i < NOTE_COUNT; ++i) {
-        if (!held_notes_[i]) {
+    for (uint8_t index = 0; index < NOTE_COUNT; ++index) {
+        if (!held_notes_[index]) {
             continue;
         }
-        const uint8_t vel = held_velocities_[i];
+        const uint8_t vel = held_velocities_[index];
         if (!found || vel >= voice_velocity) {
             voice_velocity = vel;
             found = true;
@@ -95,97 +102,102 @@ void TouchMeHandler::update_random_from_held_notes() {
     refresh_random_led();
 }
 
-uint8_t TouchMeHandler::cc_quarter_from_normalized(uint8_t normalized) {
-    const uint8_t v = (normalized > 127) ? 127 : normalized;
-    if (v >= 127) {
-        return CC_QUARTER_COUNT - 1;
-    }
-    return static_cast<uint8_t>(
-        (static_cast<uint16_t>(v) * CC_QUARTER_COUNT) / 128u
-    );
-}
-
 void TouchMeHandler::refresh_slow_led() {
-    if (!touch_active_ || !slow_cc_quarter_valid_) {
+    if (!touch_active_ || held_count_ == 0) {
         set_led_gate(SLOW, CRGB::Black);
         return;
     }
-    const int rel_note =
-        static_cast<int>(last_slow_note_) - static_cast<int>(BASE_NOTE);
-    CRGB color = rel_note_to_color(rel_note);
+    CRGB color = rel_note_to_color(last_slow_note_);
     if (slow_gate_pulse_active_) {
         color.nscale8(51);
     }
     set_led_gate(SLOW, color);
 }
 
-void TouchMeHandler::apply_slow_note(uint8_t note, uint32_t now_ms) {
-    last_slow_note_ = note;
-    (void)set_cv(SLOW, midi_note_to_volts(note));
+void TouchMeHandler::set_slow_pitch(int rel_note) {
+    last_slow_note_ = rel_note;
+    (void)set_cv(SLOW, rel_note_to_volts(rel_note));
+    refresh_slow_led();
+}
+
+void TouchMeHandler::set_fast_pitch(int rel_note) {
+    last_fast_note_ = rel_note;
+    (void)set_cv(FAST, rel_note_to_volts(rel_note));
+    refresh_fast_led();
+}
+
+void TouchMeHandler::pulse_slow_gate(uint32_t now_ms) {
     slow_gate_pulse_active_ = true;
     slow_gate_pulse_end_ms_ = now_ms + GATE_PULSE_MS;
     set_gate(SLOW, true);
     refresh_slow_led();
 }
 
-void TouchMeHandler::update_slow_from_cc(uint8_t normalized, uint32_t now_ms) {
-    const uint8_t quarter = cc_quarter_from_normalized(normalized);
-    if (!slow_cc_quarter_valid_) {
-        slow_cc_quarter_valid_ = true;
-        slow_cc_quarter_ = quarter;
-        return;
-    }
-    if (quarter == slow_cc_quarter_) {
-        return;
-    }
-    slow_cc_quarter_ = quarter;
-    slow_zone_pending_ = true;
-    slow_zone_trigger_at_ms_ = now_ms + SLOW_ZONE_DEBOUNCE_MS;
-}
-
-void TouchMeHandler::tick_slow_zone_pending(uint32_t now_ms) {
-    if (!slow_zone_pending_ || !touch_active_) {
-        return;
-    }
-    if (static_cast<int32_t>(now_ms - slow_zone_trigger_at_ms_) < 0) {
-        return;
-    }
-    slow_zone_pending_ = false;
-    apply_slow_note(last_touch_note_, now_ms);
-}
-
-void TouchMeHandler::apply_fast_note(uint8_t note, uint32_t now_ms) {
-    last_fast_note_ = note;
-    (void)set_cv(FAST, midi_note_to_volts(note));
+void TouchMeHandler::pulse_fast_gate(uint32_t now_ms) {
     fast_gate_pulse_active_ = true;
     fast_gate_pulse_end_ms_ = now_ms + GATE_PULSE_MS;
     set_gate(FAST, true);
     refresh_fast_led();
 }
 
-void TouchMeHandler::update_fast_from_held_notes() {
-    if (held_count_ == 0) {
-        refresh_fast_led();
-        return;
+void TouchMeHandler::apply_fast_note(int rel_note, uint32_t now_ms) {
+    set_fast_pitch(rel_note);
+    pulse_fast_gate(now_ms);
+}
+
+void TouchMeHandler::reset_slow_zone_latches() {
+    for (int i = 0; i < SLOW_ZONE_COUNT; ++i) {
+        slow_zone_pitch_[i] = 0;
+        slow_zone_pitch_valid_[i] = false;
     }
-    uint8_t voice_note = 0;
+}
+
+int TouchMeHandler::slow_pitch_for_zone(int zone, int rel_note) {
+    const int index = zone - SLOW_ZONE_MIN;
+    if (index < 0 || index >= SLOW_ZONE_COUNT) {
+        return rel_note;
+    }
+    if (!slow_zone_pitch_valid_[index]) {
+        slow_zone_pitch_[index] = rel_note;
+        slow_zone_pitch_valid_[index] = true;
+    }
+    return slow_zone_pitch_[index];
+}
+
+void TouchMeHandler::update_slow_zone(
+    int rel_note, uint32_t now_ms, bool pulse_gate
+) {
+    const int slow_zone = rel_note / 4;
+    if (slow_zone_valid_ && slow_zone != last_slow_zone_) {
+        set_slow_pitch(slow_pitch_for_zone(slow_zone, rel_note));
+        if (pulse_gate) {
+            pulse_slow_gate(now_ms);
+        }
+    }
+    last_slow_zone_ = slow_zone;
+    slow_zone_valid_ = true;
+}
+
+void TouchMeHandler::update_held_pitch(int rel_note, uint32_t now_ms) {
+    set_fast_pitch(rel_note);
+    update_slow_zone(rel_note, now_ms, false);
+}
+
+int TouchMeHandler::highest_held_rel_note() const {
+    int voice_rel = 0;
     bool found = false;
     for (uint8_t i = 0; i < NOTE_COUNT; ++i) {
         if (!held_notes_[i]) {
             continue;
         }
-        if (!found || i > voice_note) {
-            voice_note = i;
+        const int held_rel =
+            static_cast<int>(i) - static_cast<int>(BASE_NOTE);
+        if (!found || held_rel > voice_rel) {
+            voice_rel = held_rel;
             found = true;
         }
     }
-    if (!found) {
-        refresh_fast_led();
-        return;
-    }
-    last_fast_note_ = voice_note;
-    (void)set_cv(FAST, midi_note_to_volts(voice_note));
-    refresh_fast_led();
+    return found ? voice_rel : 0;
 }
 
 uint8_t TouchMeHandler::normalize_cc(uint8_t raw) {
@@ -209,8 +221,8 @@ void TouchMeHandler::handle_touch_cc(uint8_t raw, uint32_t now_ms) {
     last_touch_cc_ = normalized;
     if (touch_active_) {
         apply_cont_from_cc(normalized);
-        update_slow_from_cc(normalized, now_ms);
     }
+    (void)now_ms;
 }
 
 void TouchMeHandler::apply_cont_from_cc(uint8_t normalized) {
@@ -225,10 +237,9 @@ void TouchMeHandler::apply_cont_from_cc(uint8_t normalized) {
 }
 
 void TouchMeHandler::touch_on_outputs() {
-    slow_cc_quarter_valid_ = false;
-    slow_cc_quarter_ = 0;
-    slow_zone_pending_ = false;
-    slow_zone_trigger_at_ms_ = 0;
+    slow_zone_valid_ = false;
+    last_slow_zone_ = 0;
+    reset_slow_zone_latches();
     set_gate(CONT, true);
     apply_cont_from_cc(last_touch_cc_);
 }
@@ -240,20 +251,18 @@ void TouchMeHandler::touch_off_outputs() {
 
     fast_gate_pulse_active_ = false;
     set_gate(FAST, false);
-    (void)set_cv(FAST, 0.0f);
+    // (void)set_cv(FAST, 0.0f);
     set_led_gate(FAST, CRGB::Black);
 
     slow_gate_pulse_active_ = false;
-    slow_cc_quarter_valid_ = false;
-    slow_zone_pending_ = false;
-    slow_zone_trigger_at_ms_ = 0;
+    slow_zone_valid_ = false;
     set_gate(SLOW, false);
-    (void)set_cv(SLOW, 0.0f);
+    // (void)set_cv(SLOW, 0.0f);
     set_led_gate(SLOW, CRGB::Black);
 
     random_gate_pulse_active_ = false;
     set_gate(RANDOM, false);
-    (void)set_cv(RANDOM, 0.0f);
+    // (void)set_cv(RANDOM, 0.0f);
     set_led_gate(RANDOM, CRGB::Black);
 }
 
@@ -265,30 +274,30 @@ void TouchMeHandler::reset_touch_state() {
     }
     touch_active_ = false;
     all_notes_off_since_ms_ = 0;
-    last_fast_note_ = BASE_NOTE;
+    last_fast_note_ = 0;
     fast_gate_pulse_active_ = false;
     fast_gate_pulse_end_ms_ = 0;
-    last_slow_note_ = BASE_NOTE;
+    last_slow_note_ = 0;
     slow_gate_pulse_active_ = false;
     slow_gate_pulse_end_ms_ = 0;
-    slow_cc_quarter_valid_ = false;
-    slow_cc_quarter_ = 0;
-    slow_zone_pending_ = false;
-    slow_zone_trigger_at_ms_ = 0;
-    last_touch_note_ = BASE_NOTE;
+    slow_zone_valid_ = false;
+    last_slow_zone_ = 0;
+    reset_slow_zone_latches();
     last_random_velocity_ = 0;
     random_gate_pulse_active_ = false;
     random_gate_pulse_end_ms_ = 0;
 }
 
-void TouchMeHandler::on_note_pressed(uint8_t note, uint8_t velocity, uint32_t now_ms) {
-    if (note >= NOTE_COUNT || held_notes_[note]) {
+void TouchMeHandler::on_note_pressed(
+    int rel_note, uint8_t velocity, uint32_t now_ms
+) {
+    uint8_t index = 0;
+    if (!rel_note_index(rel_note, &index) || held_notes_[index]) {
         return;
     }
     const bool was_empty = (held_count_ == 0);
-    held_notes_[note] = true;
-    held_velocities_[note] = (velocity > 127) ? 127 : velocity;
-    last_touch_note_ = note;
+    held_notes_[index] = true;
+    held_velocities_[index] = (velocity > 127) ? 127 : velocity;
     ++held_count_;
     all_notes_off_since_ms_ = 0;
     if (was_empty && !touch_active_) {
@@ -297,23 +306,27 @@ void TouchMeHandler::on_note_pressed(uint8_t note, uint8_t velocity, uint32_t no
         touch_on_outputs();
     }
     if (touch_active_) {
-        apply_fast_note(note, now_ms);
+        apply_fast_note(rel_note, now_ms);
         apply_random_note(velocity, now_ms);
+        update_slow_zone(rel_note, now_ms, true);
     }
 }
 
-void TouchMeHandler::on_note_released(uint8_t note, uint32_t now_ms) {
-    if (note >= NOTE_COUNT || !held_notes_[note]) {
+void TouchMeHandler::on_note_released(int rel_note, uint32_t now_ms) {
+    uint8_t index = 0;
+    if (!rel_note_index(rel_note, &index) || !held_notes_[index]) {
         return;
     }
-    held_notes_[note] = false;
-    held_velocities_[note] = 0;
+    held_notes_[index] = false;
+    held_velocities_[index] = 0;
     if (held_count_ == 0) {
         return;
     }
     --held_count_;
     if (touch_active_) {
-        update_fast_from_held_notes();
+        if (held_count_ != 0) {
+            update_held_pitch(highest_held_rel_note(), now_ms);
+        }
         update_random_from_held_notes();
     }
     if (held_count_ == 0 && touch_active_) {
@@ -325,20 +338,27 @@ void TouchMeHandler::midi(const MidiEvent& event) {
     const uint32_t now_ms = millis();
 
     if (event.type == MidiEventType::NoteOff) {
-        on_note_released(event.data.note_off.note, now_ms);
+        const uint8_t midi_note = event.data.note_off.note;
+        const int rel_note =
+            static_cast<int>(midi_note) - static_cast<int>(BASE_NOTE);
+        on_note_released(rel_note, now_ms);
+        logger_printf("TouchMe note off rel=%d", rel_note);
         return;
     }
     if (event.type == MidiEventType::NoteOn) {
-        const uint8_t note = event.data.note_on.note;
+        const uint8_t midi_note = event.data.note_on.note;
         const uint8_t velocity = event.data.note_on.velocity;
+        const int rel_note =
+            static_cast<int>(midi_note) - static_cast<int>(BASE_NOTE);
         if (velocity == 0) {
-            on_note_released(note, now_ms);
+            on_note_released(rel_note, now_ms);
+            logger_printf("TouchMe note off rel=%d", rel_note);
             return;
         }
-        on_note_pressed(note, velocity, now_ms);
+        on_note_pressed(rel_note, velocity, now_ms);
         logger_printf(
-            "TouchMe note note=%u vel=%u",
-            static_cast<unsigned>(note),
+            "TouchMe note on rel=%d vel=%u",
+            rel_note,
             static_cast<unsigned>(velocity)
         );
         return;
@@ -353,7 +373,6 @@ void TouchMeHandler::press() {}
 
 void TouchMeHandler::tick(float dt_sec, uint32_t now_ms) {
     (void)dt_sec;
-    tick_slow_zone_pending(now_ms);
     if (fast_gate_pulse_active_ &&
         static_cast<int32_t>(now_ms - fast_gate_pulse_end_ms_) >= 0) {
         fast_gate_pulse_active_ = false;
