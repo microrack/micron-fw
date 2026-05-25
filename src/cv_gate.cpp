@@ -310,11 +310,13 @@ bool set_cv(uint8_t channel, float volts) {
     g_cv_phase_increments[channel] = phase_increment;
     taskEXIT_CRITICAL(&g_cv_codes_lock);
 
+    //*
     logger_printf(
         "set_cv ch=%u volts=%.3f",
         static_cast<unsigned>(channel),
         volts
     );
+    // */
     return true;
 }
 
