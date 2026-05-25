@@ -9,6 +9,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "mcp4728.h"
+#include "soc/gpio_struct.h"
 #include <cmath>
 
 namespace {
@@ -35,16 +36,53 @@ enum class SynthEnvelopeState : uint8_t {
     Fall,
 };
 
+struct FastGpioOut {
+    volatile uint32_t* set_reg;
+    volatile uint32_t* clr_reg;
+    uint32_t mask;
+};
+
 static uint16_t g_cv_codes[CV_CHANNEL_COUNT] = {};
 static float g_cv_phase_increments[CV_CHANNEL_COUNT] = {};
 static float g_cv_amplitudes[CV_CHANNEL_COUNT] = {};
 static float g_cv_phase[CV_CHANNEL_COUNT] = {};
 static SynthEnvelopeState g_cv_envelope_states[CV_CHANNEL_COUNT] = {};
-static bool g_cv_dirty = true;
+static bool g_gate_on[BOARD_GATE_OUT_COUNT] = {};
+static bool g_clock_on = false;
 static CvMode g_mode = CvMode::Cv;
 static portMUX_TYPE g_cv_codes_lock = portMUX_INITIALIZER_UNLOCKED;
 static TaskHandle_t g_cv_dac_task = nullptr;
 static gptimer_handle_t g_cv_dac_timer = nullptr;
+static FastGpioOut g_gate_gpios[BOARD_GATE_OUT_COUNT] = {};
+static FastGpioOut g_clock_gpio = {};
+
+void init_fast_gpio(FastGpioOut* out, uint8_t pin) {
+    if (pin < 32) {
+        out->set_reg = &GPIO.out_w1ts;
+        out->clr_reg = &GPIO.out_w1tc;
+        out->mask = (1UL << pin);
+    } else {
+        out->set_reg = &GPIO.out1_w1ts.val;
+        out->clr_reg = &GPIO.out1_w1tc.val;
+        out->mask = (1UL << (pin - 32));
+    }
+}
+
+void IRAM_ATTR fast_gpio_write(const FastGpioOut& gpio, bool high) {
+    if (high) {
+        *gpio.set_reg = gpio.mask;
+    } else {
+        *gpio.clr_reg = gpio.mask;
+    }
+}
+
+void apply_gate_outputs(const bool gate_on[BOARD_GATE_OUT_COUNT], bool clock_on) {
+    for (uint8_t i = 0; i < BOARD_GATE_OUT_COUNT; ++i) {
+        // Active-low gate: logical on drives the pin low.
+        fast_gpio_write(g_gate_gpios[i], gate_on[i] ? false : true);
+    }
+    fast_gpio_write(g_clock_gpio, clock_on ? false : true);
+}
 
 bool IRAM_ATTR cv_dac_timer_on_alarm(
     gptimer_handle_t,
@@ -60,8 +98,9 @@ void cv_dac_worker_task(void*) {
     uint16_t local_codes[CV_CHANNEL_COUNT] = {};
     float local_phase_increments[CV_CHANNEL_COUNT] = {};
     float local_amplitudes[CV_CHANNEL_COUNT] = {};
+    bool local_gate_on[BOARD_GATE_OUT_COUNT] = {};
+    bool local_clock_on = false;
     CvMode local_mode = CvMode::Cv;
-    bool local_dirty = false;
 
     while (true) {
         (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
@@ -70,17 +109,17 @@ void cv_dac_worker_task(void*) {
             local_codes[i] = g_cv_codes[i];
             local_phase_increments[i] = g_cv_phase_increments[i];
         }
-        local_mode = g_mode;
-        local_dirty = g_cv_dirty;
-        if (g_mode == CvMode::Cv) {
-            g_cv_dirty = false;
+        for (uint8_t i = 0; i < BOARD_GATE_OUT_COUNT; ++i) {
+            local_gate_on[i] = g_gate_on[i];
         }
+        local_clock_on = g_clock_on;
+        local_mode = g_mode;
         taskEXIT_CRITICAL(&g_cv_codes_lock);
 
+        apply_gate_outputs(local_gate_on, local_clock_on);
+
         if (local_mode == CvMode::Cv) {
-            if (local_dirty) {
-                (void)mcp4728_write_all(CV_CHANNEL_COUNT, local_codes);
-            }
+            (void)mcp4728_write_all(CV_CHANNEL_COUNT, local_codes);
             continue;
         }
 
@@ -159,10 +198,12 @@ void init_cv_gate() {
     const BoardPinsProfile* pins = board_pins();
     for (uint8_t i = 0; i < BOARD_GATE_OUT_COUNT; ++i) {
         pinMode(pins->gate_out_pins[i], OUTPUT);
-        digitalWrite(pins->gate_out_pins[i], HIGH);  // off: active-low gates idle high
+        init_fast_gpio(&g_gate_gpios[i], pins->gate_out_pins[i]);
+        g_gate_on[i] = false;
     }
     pinMode(pins->clock_out_pin, OUTPUT);
-    digitalWrite(pins->clock_out_pin, HIGH);  // off: active-low clock idle high
+    init_fast_gpio(&g_clock_gpio, pins->clock_out_pin);
+    g_clock_on = false;
 
     xTaskCreatePinnedToCore(
         cv_dac_worker_task,
@@ -198,7 +239,6 @@ void init_cv_gate() {
 void set_cv_mode(CvMode mode) {
     taskENTER_CRITICAL(&g_cv_codes_lock);
     g_mode = mode;
-    g_cv_dirty = true;
     if (mode == CvMode::Synth) {
         for (uint8_t i = 0; i < CV_CHANNEL_COUNT; ++i) {
             g_cv_phase[i] = 0.0f;
@@ -226,10 +266,12 @@ void set_cv_synth_note(uint8_t channel, bool on) {
 
 void set_gate(uint8_t idx, bool on) {
     logger_printf("set_gate idx=%u on=%u", static_cast<unsigned>(idx), on ? 1U : 0U);
-    const BoardPinsProfile* pins = board_pins();
-    if (idx < BOARD_GATE_OUT_COUNT) {
-        digitalWrite(pins->gate_out_pins[idx], on ? LOW : HIGH);
+    if (idx >= BOARD_GATE_OUT_COUNT) {
+        return;
     }
+    taskENTER_CRITICAL(&g_cv_codes_lock);
+    g_gate_on[idx] = on;
+    taskEXIT_CRITICAL(&g_cv_codes_lock);
 }
 
 void set_all_gates(bool on) {
@@ -240,7 +282,9 @@ void set_all_gates(bool on) {
 
 void set_clock(bool on) {
     logger_printf("set_clock on=%u", on ? 1U : 0U);
-    digitalWrite(board_pins()->clock_out_pin, on ? LOW : HIGH);
+    taskENTER_CRITICAL(&g_cv_codes_lock);
+    g_clock_on = on;
+    taskEXIT_CRITICAL(&g_cv_codes_lock);
 }
 
 bool set_cv(uint8_t channel, float volts) {
@@ -264,7 +308,6 @@ bool set_cv(uint8_t channel, float volts) {
     taskENTER_CRITICAL(&g_cv_codes_lock);
     g_cv_codes[channel] = static_cast<uint16_t>(code & 0x0FFFU);
     g_cv_phase_increments[channel] = phase_increment;
-    g_cv_dirty = true;
     taskEXIT_CRITICAL(&g_cv_codes_lock);
 
     logger_printf(
