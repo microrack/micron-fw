@@ -16,8 +16,7 @@ bool TouchMeHandler::probe(const UsbDeviceContext& context) {
 }
 
 float TouchMeHandler::midi_note_to_volts(uint8_t note) {
-    const float v =
-        1.0f + (static_cast<float>(note) - static_cast<float>(BASE_NOTE)) / 12.0f;
+    const float v = (static_cast<float>(note) - static_cast<float>(BASE_NOTE)) / 12.0f;
     if (v < 0.0f) {
         return 0.0f;
     }
