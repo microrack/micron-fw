@@ -169,7 +169,7 @@ void OrbitaHandler::tick(float dt_sec, uint32_t now_ms) {
 
 void OrbitaHandler::enter() {
     logger_printf("OrbitaHandler: enter");
-    set_cv_gate_mode(CvGateMode::CvGate);
+    set_cv_mode(CvMode::Cv);
     reset_all_outputs();
     set_led_all(CRGB::Black);
     clock_pulse_active_ = false;
@@ -200,7 +200,7 @@ void OrbitaHandler::enter() {
 
 void OrbitaHandler::exit() {
     logger_printf("OrbitaHandler: exit");
-    set_cv_gate_mode(CvGateMode::CvGate);
+    set_cv_mode(CvMode::Cv);
     reset_all_outputs();
     set_led_all(CRGB::Black);
     clock_pulse_active_ = false;

@@ -41,7 +41,7 @@ static float g_cv_amplitudes[CV_CHANNEL_COUNT] = {};
 static float g_cv_phase[CV_CHANNEL_COUNT] = {};
 static SynthEnvelopeState g_cv_envelope_states[CV_CHANNEL_COUNT] = {};
 static bool g_cv_dirty = true;
-static CvGateMode g_mode = CvGateMode::CvGate;
+static CvMode g_mode = CvMode::Cv;
 static portMUX_TYPE g_cv_codes_lock = portMUX_INITIALIZER_UNLOCKED;
 static TaskHandle_t g_cv_dac_task = nullptr;
 static gptimer_handle_t g_cv_dac_timer = nullptr;
@@ -60,7 +60,7 @@ void cv_dac_worker_task(void*) {
     uint16_t local_codes[CV_CHANNEL_COUNT] = {};
     float local_phase_increments[CV_CHANNEL_COUNT] = {};
     float local_amplitudes[CV_CHANNEL_COUNT] = {};
-    CvGateMode local_mode = CvGateMode::CvGate;
+    CvMode local_mode = CvMode::Cv;
     bool local_dirty = false;
 
     while (true) {
@@ -72,12 +72,12 @@ void cv_dac_worker_task(void*) {
         }
         local_mode = g_mode;
         local_dirty = g_cv_dirty;
-        if (g_mode == CvGateMode::CvGate) {
+        if (g_mode == CvMode::Cv) {
             g_cv_dirty = false;
         }
         taskEXIT_CRITICAL(&g_cv_codes_lock);
 
-        if (local_mode == CvGateMode::CvGate) {
+        if (local_mode == CvMode::Cv) {
             if (local_dirty) {
                 (void)mcp4728_write_all(CV_CHANNEL_COUNT, local_codes);
             }
@@ -195,11 +195,11 @@ void init_cv_gate() {
     ESP_ERROR_CHECK(gptimer_start(g_cv_dac_timer));
 }
 
-void set_cv_gate_mode(CvGateMode mode) {
+void set_cv_mode(CvMode mode) {
     taskENTER_CRITICAL(&g_cv_codes_lock);
     g_mode = mode;
     g_cv_dirty = true;
-    if (mode == CvGateMode::Synth) {
+    if (mode == CvMode::Synth) {
         for (uint8_t i = 0; i < CV_CHANNEL_COUNT; ++i) {
             g_cv_phase[i] = 0.0f;
             g_cv_amplitudes[i] = 0.0f;
@@ -209,24 +209,26 @@ void set_cv_gate_mode(CvGateMode mode) {
     taskEXIT_CRITICAL(&g_cv_codes_lock);
 }
 
+void set_cv_synth_note(uint8_t channel, bool on) {
+    if (channel >= CV_CHANNEL_COUNT) {
+        return;
+    }
+    taskENTER_CRITICAL(&g_cv_codes_lock);
+    if (on) {
+        g_cv_envelope_states[channel] = SynthEnvelopeState::Rise;
+    } else if (g_cv_envelope_states[channel] == SynthEnvelopeState::Rise) {
+        g_cv_envelope_states[channel] = SynthEnvelopeState::RiseThenFall;
+    } else {
+        g_cv_envelope_states[channel] = SynthEnvelopeState::Fall;
+    }
+    taskEXIT_CRITICAL(&g_cv_codes_lock);
+}
+
 void set_gate(uint8_t idx, bool on) {
     logger_printf("set_gate idx=%u on=%u", static_cast<unsigned>(idx), on ? 1U : 0U);
     const BoardPinsProfile* pins = board_pins();
     if (idx < BOARD_GATE_OUT_COUNT) {
         digitalWrite(pins->gate_out_pins[idx], on ? LOW : HIGH);
-    }
-    if (idx < CV_CHANNEL_COUNT) {
-        taskENTER_CRITICAL(&g_cv_codes_lock);
-        if (on) {
-            g_cv_envelope_states[idx] = SynthEnvelopeState::Rise;
-        } else {
-            if (g_cv_envelope_states[idx] == SynthEnvelopeState::Rise) {
-                g_cv_envelope_states[idx] = SynthEnvelopeState::RiseThenFall;
-            } else {
-                g_cv_envelope_states[idx] = SynthEnvelopeState::Fall;
-            }
-        }
-        taskEXIT_CRITICAL(&g_cv_codes_lock);
     }
 }
 
