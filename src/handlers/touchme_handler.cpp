@@ -409,7 +409,8 @@ void TouchMeHandler::update_clock(float dt_sec) {
     }
 }
 
-void TouchMeHandler::tick(float dt_sec, uint32_t now_ms) {
+void TouchMeHandler::tick(float dt_sec, uint32_t now_ms, const GadgetTickInputs& inputs) {
+    (void)inputs;
     update_clock(dt_sec);
     if (fast_gate_pulse_active_ &&
         static_cast<int32_t>(now_ms - fast_gate_pulse_end_ms_) >= 0) {

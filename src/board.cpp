@@ -14,6 +14,17 @@ namespace {
 
 const BoardPinsProfile* g_board_pins = nullptr;
 
+/// External CV/clock voltage = ADC pin voltage × gain (1:2 divider on the input).
+constexpr float kAnalogInDividerGain = 2.0f;
+
+float analog_pin_to_volts(int8_t pin) {
+    const int mv = analogReadMilliVolts(pin);
+    if (mv <= 0) {
+        return 0.0f;
+    }
+    return (static_cast<float>(mv) / 1000.0f) * kAnalogInDividerGain;
+}
+
 }  // namespace
 
 const BoardPinsProfile kBoardProfiles[] = {
@@ -28,6 +39,11 @@ const BoardPinsProfile kBoardProfiles[] = {
         p.gate_out_pins[2] = 35;
         p.gate_out_pins[3] = 36;
         p.clock_out_pin = 37;
+        p.clock_in_pin = -1;
+        p.cv_in_pins[0] = -1;
+        p.cv_in_pins[1] = -1;
+        p.cv_in_pins[2] = -1;
+        p.cv_in_pins[3] = -1;
         p.mcp4728_sda = 9;
         p.mcp4728_scl = 10;
         p.gate_led_indices[0] = 8;
@@ -48,6 +64,11 @@ const BoardPinsProfile kBoardProfiles[] = {
         p.gate_out_pins[2] = 18;
         p.gate_out_pins[3] = 21;
         p.clock_out_pin = 13;
+        p.clock_in_pin = 4;
+        p.cv_in_pins[0] = 5;
+        p.cv_in_pins[1] = 6;
+        p.cv_in_pins[2] = 7;
+        p.cv_in_pins[3] = 8;
         p.mcp4728_sda = 33;
         p.mcp4728_scl = 34;
         p.gate_led_indices[0] = 3;
@@ -82,4 +103,20 @@ const BoardPinsProfile* board_pins() {
         g_board_pins = &kBoardProfiles[1];
     }
     return g_board_pins;
+}
+
+void board_read_gadget_tick_inputs(GadgetTickInputs& inputs) {
+    inputs = {};
+    const BoardPinsProfile* pins = board_pins();
+
+    if (pins->clock_in_pin >= 0) {
+        inputs.clock_in = analog_pin_to_volts(pins->clock_in_pin);
+    }
+
+    for (uint8_t i = 0; i < BOARD_CV_IN_COUNT; ++i) {
+        const int8_t pin = pins->cv_in_pins[i];
+        if (pin >= 0) {
+            inputs.cv_in[i] = analog_pin_to_volts(pin);
+        }
+    }
 }

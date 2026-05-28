@@ -111,6 +111,21 @@ struct MidiEvent {
     } data = {};
 };
 
+enum class CvInIndex : uint8_t {
+    CV_A = 0,
+    CV_B,
+    CV_C,
+    CV_D,
+};
+
+static constexpr size_t GADGET_CV_IN_COUNT = 4;
+
+/** Analog inputs in volts at the jack (1:2 divider compensated). */
+struct GadgetTickInputs {
+    float clock_in = 0.0f;
+    float cv_in[GADGET_CV_IN_COUNT] = {};
+};
+
 class GadgetHandler {
    public:
     virtual ~GadgetHandler() = default;
@@ -118,7 +133,7 @@ class GadgetHandler {
     virtual bool probe(const UsbDeviceContext& context) = 0;
     virtual void midi(const MidiEvent& event) = 0;
     virtual void press() = 0;
-    virtual void tick(float dt_sec, uint32_t now_ms) = 0;
+    virtual void tick(float dt_sec, uint32_t now_ms, const GadgetTickInputs& inputs) = 0;
 
     /// Called from the main loop once the USB gadget path is ready (MIDI stream up).
     virtual void enter() = 0;

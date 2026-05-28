@@ -2,11 +2,14 @@
 
 #include <Arduino.h>
 
+#include "gadget_handler.h"
+
 #define PROFILING 0
 
 /** Maximum WS2812 count across profiles (FastLED buffer size). */
 static constexpr uint16_t BOARD_LED_COUNT_MAX = 9;
 static constexpr uint8_t BOARD_GATE_OUT_COUNT = 4;
+static constexpr uint8_t BOARD_CV_IN_COUNT = GADGET_CV_IN_COUNT;
 
 /** Runtime pin map (filled from selected hardware profile). */
 struct BoardPinsProfile {
@@ -16,6 +19,8 @@ struct BoardPinsProfile {
     uint8_t touch_pin;
     uint8_t gate_out_pins[BOARD_GATE_OUT_COUNT];
     uint8_t clock_out_pin;
+    int8_t clock_in_pin;
+    int8_t cv_in_pins[BOARD_CV_IN_COUNT];
     int mcp4728_sda;
     int mcp4728_scl;
     uint8_t gate_led_indices[BOARD_GATE_OUT_COUNT];
@@ -28,3 +33,4 @@ extern const uint8_t kBoardProfilesCount;
 
 void board_pins_init();
 const BoardPinsProfile* board_pins();
+void board_read_gadget_tick_inputs(GadgetTickInputs& inputs);

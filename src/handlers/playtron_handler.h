@@ -13,7 +13,7 @@ class PlaytronHandler : public GadgetHandler {
     bool probe(const UsbDeviceContext& context) override;
     void midi(const MidiEvent& event) override;
     void press() override;
-    void tick(float dt_sec, uint32_t now_ms) override;
+    void tick(float dt_sec, uint32_t now_ms, const GadgetTickInputs& inputs) override;
     void enter() override;
     void exit() override;
 

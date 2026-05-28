@@ -154,8 +154,9 @@ void OrbitaHandler::press() {
     // No mode switching: the handler runs in a single mode.
 }
 
-void OrbitaHandler::tick(float dt_sec, uint32_t now_ms) {
+void OrbitaHandler::tick(float dt_sec, uint32_t now_ms, const GadgetTickInputs& inputs) {
     (void)dt_sec;
+    (void)inputs;
     if (!clock_pulse_active_) {
         return;
     }

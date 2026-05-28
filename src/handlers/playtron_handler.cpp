@@ -127,8 +127,9 @@ void PlaytronHandler::press() {
     );
 }
 
-void PlaytronHandler::tick(float dt_sec, uint32_t now_ms) {
+void PlaytronHandler::tick(float dt_sec, uint32_t now_ms, const GadgetTickInputs& inputs) {
     (void)dt_sec;
+    (void)inputs;
     if (mode_transition_pending_) {
         mode_transition_pending_ = false;
         mode_transition_active_ = true;

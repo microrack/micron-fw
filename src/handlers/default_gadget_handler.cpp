@@ -62,7 +62,7 @@ class DefaultGadgetHandler : public GadgetHandler {
     }
     void midi(const MidiEvent& event) override;
     void press() override;
-    void tick(float dt_sec, uint32_t now_ms) override;
+    void tick(float dt_sec, uint32_t now_ms, const GadgetTickInputs& inputs) override;
     void enter() override;
     void exit() override;
 
@@ -173,8 +173,9 @@ void DefaultGadgetHandler::press() {
     );
 }
 
-void DefaultGadgetHandler::tick(float dt_sec, uint32_t now_ms) {
+void DefaultGadgetHandler::tick(float dt_sec, uint32_t now_ms, const GadgetTickInputs& inputs) {
     (void)dt_sec;
+    (void)inputs;
     if (mode_transition_pending_) {
         mode_transition_pending_ = false;
         mode_transition_active_ = true;

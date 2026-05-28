@@ -90,7 +90,9 @@ void loop() {
     const float dt_sec = static_cast<float>(now_ms - prev_tick_ms) / 1000.0f;
     prev_tick_ms = now_ms;
     LOOP_PROFILE(LoopProfileSlot::MidiPoll, midi_input_poll());
-    LOOP_PROFILE(LoopProfileSlot::Tick, gadget_handler_get().tick(dt_sec, now_ms));
+    GadgetTickInputs tick_inputs = {};
+    board_read_gadget_tick_inputs(tick_inputs);
+    LOOP_PROFILE(LoopProfileSlot::Tick, gadget_handler_get().tick(dt_sec, now_ms, tick_inputs));
 
     const ButtonEvent button_event = button_handle();
 
