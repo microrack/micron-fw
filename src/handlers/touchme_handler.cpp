@@ -385,8 +385,32 @@ void TouchMeHandler::midi(const MidiEvent& event) {
 
 void TouchMeHandler::press() {}
 
+void TouchMeHandler::update_clock(float dt_sec) {
+    const float period_sec = 60.0f / CLOCK_BPM;
+    const float high_sec = period_sec * CLOCK_DUTY;
+
+    clock_phase_sec_ += dt_sec;
+    while (clock_phase_sec_ >= period_sec) {
+        clock_phase_sec_ -= period_sec;
+    }
+
+    const bool should_be_high = clock_phase_sec_ < high_sec;
+    if (should_be_high == clock_high_) {
+        return;
+    }
+    clock_high_ = should_be_high;
+    set_clock(clock_high_);
+    if (clock_high_) {
+        CRGB color = CRGB::Red;
+        color.nscale8(128);
+        set_led_clock(color);
+    } else {
+        set_led_clock(CRGB::Black);
+    }
+}
+
 void TouchMeHandler::tick(float dt_sec, uint32_t now_ms) {
-    (void)dt_sec;
+    update_clock(dt_sec);
     if (fast_gate_pulse_active_ &&
         static_cast<int32_t>(now_ms - fast_gate_pulse_end_ms_) >= 0) {
         fast_gate_pulse_active_ = false;
@@ -426,6 +450,9 @@ void TouchMeHandler::enter() {
     last_touch_cc_ = 0;
     cc_max_ = DEFAULT_CC_MAX;
     reset_touch_state();
+    clock_phase_sec_ = 0.0f;
+    clock_high_ = false;
+    update_clock(0.0f);
 }
 
 void TouchMeHandler::exit() {
@@ -438,6 +465,8 @@ void TouchMeHandler::exit() {
     last_touch_cc_ = 0;
     cc_max_ = DEFAULT_CC_MAX;
     reset_touch_state();
+    clock_phase_sec_ = 0.0f;
+    clock_high_ = false;
 }
 
 TouchMeHandler g_touchme_handler;
