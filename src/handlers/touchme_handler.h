@@ -25,8 +25,11 @@ class TouchMeHandler : public GadgetHandler {
     static constexpr uint32_t GATE_PULSE_MS = 50;
     static constexpr uint8_t TOUCH_CC = 90;
     static constexpr uint8_t DEFAULT_CC_MAX = 40;
-    static constexpr float CLOCK_BPM = 120.0f;
+    static constexpr float CLOCK_BPM_DEFAULT = 120.0f;
     static constexpr float CLOCK_DUTY = 0.25f;
+    static constexpr float TAP_TEMPO_FIRST_INTERVAL_SEC = 10.0f;
+    static constexpr float TAP_TEMPO_RESET_THRESHOLD_SEC = 2.0f;
+    static constexpr uint8_t TAP_TEMPO_INTERVAL_MAX = 8;
     static constexpr int SLOW_ZONE_MIN =
         (-static_cast<int>(BASE_NOTE)) / 4;
     static constexpr int SLOW_ZONE_MAX =
@@ -59,6 +62,9 @@ class TouchMeHandler : public GadgetHandler {
     void refresh_slow_led();
     void refresh_random_led();
     void update_clock(float dt_sec);
+    void on_tap_tempo_interval(float interval_sec);
+    void reset_tap_tempo_state();
+    static float median_tap_interval_sec(const float* intervals, uint8_t count);
     static float rel_note_to_volts(int rel_note);
     static float velocity_to_volts(uint8_t velocity);
 
@@ -82,8 +88,12 @@ class TouchMeHandler : public GadgetHandler {
     uint8_t last_random_velocity_ = 0;
     bool random_gate_pulse_active_ = false;
     uint32_t random_gate_pulse_end_ms_ = 0;
+    float clock_bpm_ = CLOCK_BPM_DEFAULT;
     float clock_phase_sec_ = 0.0f;
     bool clock_high_ = false;
+    uint32_t last_tap_press_ms_ = 0;
+    float tap_intervals_[TAP_TEMPO_INTERVAL_MAX] = {};
+    uint8_t tap_interval_count_ = 0;
 };
 
 GadgetHandler& touchme_handler_get();

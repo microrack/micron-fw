@@ -383,10 +383,73 @@ void TouchMeHandler::midi(const MidiEvent& event) {
     }
 }
 
-void TouchMeHandler::press() {}
+float TouchMeHandler::median_tap_interval_sec(
+    const float* intervals, uint8_t count
+) {
+    float sorted[TAP_TEMPO_INTERVAL_MAX] = {};
+    for (uint8_t i = 0; i < count; ++i) {
+        sorted[i] = intervals[i];
+    }
+    for (uint8_t i = 1; i < count; ++i) {
+        const float key = sorted[i];
+        int8_t j = static_cast<int8_t>(i) - 1;
+        while (j >= 0 && sorted[static_cast<uint8_t>(j)] > key) {
+            sorted[static_cast<uint8_t>(j + 1)] = sorted[static_cast<uint8_t>(j)];
+            --j;
+        }
+        sorted[static_cast<uint8_t>(j + 1)] = key;
+    }
+    if ((count & 1u) != 0u) {
+        return sorted[count / 2];
+    }
+    const uint8_t mid = count / 2;
+    return (sorted[mid - 1] + sorted[mid]) * 0.5f;
+}
+
+void TouchMeHandler::reset_tap_tempo_state() {
+    tap_interval_count_ = 0;
+}
+
+void TouchMeHandler::on_tap_tempo_interval(float interval_sec) {
+    if (interval_sec > TAP_TEMPO_RESET_THRESHOLD_SEC) {
+        reset_tap_tempo_state();
+        return;
+    }
+
+    if (tap_interval_count_ < TAP_TEMPO_INTERVAL_MAX) {
+        tap_intervals_[tap_interval_count_++] = interval_sec;
+    }
+
+    if (tap_interval_count_ <= 3) {
+        return;
+    }
+
+    const float median_sec =
+        median_tap_interval_sec(tap_intervals_, tap_interval_count_);
+    if (median_sec <= 0.0f) {
+        return;
+    }
+    clock_bpm_ = 60.0f / median_sec;
+    logger_printf(
+        "TouchMe tap tempo: %.1f BPM (median interval %.3f s)",
+        static_cast<double>(clock_bpm_),
+        static_cast<double>(median_sec)
+    );
+}
+
+void TouchMeHandler::press() {
+    const uint32_t now_ms = millis();
+    float interval_sec = TAP_TEMPO_FIRST_INTERVAL_SEC;
+    if (last_tap_press_ms_ != 0) {
+        interval_sec =
+            static_cast<float>(now_ms - last_tap_press_ms_) / 1000.0f;
+    }
+    last_tap_press_ms_ = now_ms;
+    on_tap_tempo_interval(interval_sec);
+}
 
 void TouchMeHandler::update_clock(float dt_sec) {
-    const float period_sec = 60.0f / CLOCK_BPM;
+    const float period_sec = 60.0f / clock_bpm_;
     const float high_sec = period_sec * CLOCK_DUTY;
 
     clock_phase_sec_ += dt_sec;
@@ -451,8 +514,11 @@ void TouchMeHandler::enter() {
     last_touch_cc_ = 0;
     cc_max_ = DEFAULT_CC_MAX;
     reset_touch_state();
+    clock_bpm_ = CLOCK_BPM_DEFAULT;
     clock_phase_sec_ = 0.0f;
     clock_high_ = false;
+    last_tap_press_ms_ = 0;
+    reset_tap_tempo_state();
     update_clock(0.0f);
 }
 
@@ -466,8 +532,11 @@ void TouchMeHandler::exit() {
     last_touch_cc_ = 0;
     cc_max_ = DEFAULT_CC_MAX;
     reset_touch_state();
+    clock_bpm_ = CLOCK_BPM_DEFAULT;
     clock_phase_sec_ = 0.0f;
     clock_high_ = false;
+    last_tap_press_ms_ = 0;
+    reset_tap_tempo_state();
 }
 
 TouchMeHandler g_touchme_handler;
