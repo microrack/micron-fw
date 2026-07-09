@@ -13,6 +13,7 @@
 #endif
 #include "button.h"
 #include "handlers/default_gadget_handler.h"
+#include "handlers/op1_midi_handler.h"
 #include "handlers/orbita_handler.h"
 #include "handlers/playtron_handler.h"
 #include "handlers/touchme_handler.h"
@@ -63,6 +64,7 @@ void setup() {
     gadget_handler_reset_registry();
     gadget_handler_set_current(nullptr);
     (void)gadget_handler_register(&orbita_handler_get());
+    (void)gadget_handler_register(&op1_midi_handler_get());
     (void)gadget_handler_register(&playtron_handler_get());
     (void)gadget_handler_register(&touchme_handler_get());
     (void)gadget_handler_register(&default_gadget_handler_get());
